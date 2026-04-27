@@ -70,7 +70,7 @@ OnlineRetail/
 ## 🔄 Pipeline Flow
 
 ```
-data/raw/Online_Retail.csv
+data/raw/Online Retail.csv
         ↓
 data/processed/cleaned_sales.csv
         ↓
@@ -162,7 +162,7 @@ https://archive.ics.uci.edu/ml/datasets/Online+Retail
 After downloading, place the file in:
 
 ```
-data/raw/Online_Retail.csv
+data/raw/Online Retail.csv
 ```
 
 ---
