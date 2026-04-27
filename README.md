@@ -93,6 +93,32 @@ Power BI Dashboard
 * Bash
 
 ---
+## 📦 Environment & Dependencies
+
+This project uses a virtual environment to ensure dependency isolation and reproducibility.
+
+**Create virtual environment**
+
+python3 -m venv venv
+
+**Activate environment**
+
+ **Mac/Linux:**
+ source venv/bin/activate
+
+ **Windows:**
+ venv\Scripts\activate
+
+## 📄 Requirements
+
+Dependencies are managed using a clean, production-style requirements.txt, including only direct dependencies with controlled version ranges:
+
+pandas>=2.0,<4.0
+duckdb>=1.0,<2.0
+matplotlib>=3.7,<4.0
+
+**Install dependencies:**
+pip install -r requirements.txt
 
 ## 📊 Data Warehouse Model
 
@@ -169,23 +195,20 @@ data/raw/Online_Retail.csv
 
 ## 🚀 How to Run the Pipeline
 
-### 1. Install dependencies
+### 1. Create and activate virtual environment
 
-```bash
-pip install pandas duckdb matplotlib
-```
+python3 -m venv venv
+source venv/bin/activate
 
-### 2. Execute pipeline
+### 2. Install dependencies
+pip install -r requirements.txt
 
-```bash
+### 3. Execute pipeline
 ./run_pipeline.sh
-```
 
 Or:
 
-```bash
 python run_pipeline.py
-```
 
 ---
 
@@ -214,6 +237,7 @@ notebooks/eda_online_retail.ipynb
 * Power BI integration
 * Logging and execution tracking
 * Reproducible and modular design
+* Isolated environment with dependency management
 
 ---
 
@@ -222,6 +246,7 @@ notebooks/eda_online_retail.ipynb
 * Raw dataset is not included to keep the repository lightweight
 * The pipeline is designed to be reproducible using relative paths
 * Power BI may require updating the data source depending on the local environment
+* The virtual environment (venv/) is excluded from version control via .gitignore
 
 ---
 

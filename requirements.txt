@@ -1,6 +1,8 @@
-pandas==2.2.2
-duckdb==0.10.2
-matplotlib==3.9.0
-pycountry==23.12.11
-jupyter==1.0.0
-notebook==7.2.0
+# Core data processing
+pandas>=2.0,<4.0
+
+# Analytical database
+duckdb>=1.0,<2.0
+
+# Visualization (EDA / dashboard prep)
+matplotlib>=3.7,<4.0
