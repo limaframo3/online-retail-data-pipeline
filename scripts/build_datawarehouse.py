@@ -11,6 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SOURCE_DB_PATH = BASE_DIR / "db" / "retail.db"
 DW_DB_PATH = BASE_DIR / "db" / "DW_Online_Retail.db"
 LOG_PATH = BASE_DIR / "logs" / "pipeline.log"
+DASHBOARD_OUTPUT_DIR = BASE_DIR / "output" / "powerbi"
 
 
 # =========================================================
@@ -397,6 +398,40 @@ def log_invalid_fact_rows(con: duckdb.DuckDBPyConnection) -> None:
 
     logging.info(f"fact_sales rows with null foreign keys: {result}")
 
+# =========================================================
+# EXPORT TABLES FOR POWER BI
+# =========================================================
+def export_powerbi_csv(con: duckdb.DuckDBPyConnection) -> None:
+    """Export DW dimension and fact tables to CSV files for Power BI."""
+    logging.info("Exporting Data Warehouse tables to CSV for Power BI")
+
+    DASHBOARD_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    tables = [
+        "dim_tiempo",
+        "dim_customer",
+        "dim_product",
+        "dim_country",
+        "dim_invoice",
+        "fact_sales"
+    ]
+
+    for table in tables:
+        output_path = DASHBOARD_OUTPUT_DIR / f"{table}.csv"
+
+        logging.info(f"Exporting {table} to {output_path}")
+
+        con.execute(f"""
+        COPY (
+            SELECT *
+            FROM {table}
+        )
+        TO '{str(output_path)}'
+        (HEADER, DELIMITER ',');
+        """)
+
+    logging.info("Power BI CSV export completed successfully")
+
 
 # =========================================================
 # MAIN
@@ -425,6 +460,7 @@ def main() -> None:
 
         log_table_counts(con)
         log_invalid_fact_rows(con)
+        export_powerbi_csv(con)
 
         logging.info("Data warehouse pipeline completed successfully")
 

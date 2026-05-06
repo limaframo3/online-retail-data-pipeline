@@ -1,8 +1,5 @@
-# Core data processing
-pandas>=2.0,<4.0
-
-# Analytical database
-duckdb>=1.0,<2.0
-
-# Visualization (EDA / dashboard prep)
-matplotlib>=3.7,<4.0
+pandas>=2.2.2,<4.0
+duckdb>=1.5.2,<2.0
+matplotlib>=3.9.0,<4.0
+pycountry>=24.6.1,<25.0
+pyarrow>=14.0,<20.0
