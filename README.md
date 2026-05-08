@@ -213,7 +213,9 @@ output/powerbi/
 The dashboard is built using exported CSV files from the Data Warehouse and provides:
 
 ✔No configuration required
+
 ✔Works immediately after running the pipeline
+
 ✔Designed for easy consumption by recruiters and stakeholders
 
 **Key Metrics**
@@ -293,10 +295,10 @@ notebooks/eda_online_retail.ipynb
 * DuckDB used as lightweight analytical database
 * CSV export layer implemented for easy BI integration
 * Separation of concerns:
-* Ingestion & Cleaning
-* Transformation (Staging)
-* Data Warehouse
-* Analytics output
+  * Ingestion & Cleaning
+  * Transformation (Staging)
+  * Data Warehouse
+  * Analytics output
 
 ## 🎯 Author
 **Lina Marcela Franco Montes**
