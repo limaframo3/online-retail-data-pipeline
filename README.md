@@ -1,4 +1,5 @@
 🛍️ **Online Retail Data Pipeline & Analytics Dashboard**
+
 🚀 One-command pipeline | 📊 Power BI ready | ⚡ DuckDB-powered
 
 📌 **Overview**
@@ -105,8 +106,9 @@ Power BI Dashboard
 This project uses a virtual environment to ensure dependency isolation and reproducibility.
 
 **Create virtual environment**
-  python -m venv .venv
-
+```  
+python -m venv .venv
+```
 **Activate environment**
 
 **Mac/Linux**:
@@ -117,7 +119,6 @@ This project uses a virtual environment to ensure dependency isolation and repro
 ```
  venv\Scripts\activate
 ```
-
 ## 📄 Requirements
 ```
 pandas>=2.0,<4.0
@@ -146,14 +147,22 @@ data/raw/Online_Retail.csv
 
 1. **Clone the repository**
   ```
-  git clone <your-repo-url>
-  cd OnlineRetail
+   git clone <your-repo-url>
+   cd OnlineRetail
   ```
 2. **Create virtual environment**
   ``` 
    python -m venv .venv
-   source .venv/bin/activate   # Mac/Linux
    ```
+3 **Active the virtual environment**
+* Mac/Linux
+```
+   source .venv/bin/activate
+```
+* Windows (CMD)
+```
+   .venv\Scripts\activate
+```
 3. **Install dependencies**
    ```
    pip install -r requirements.txt
@@ -214,20 +223,23 @@ The pipeline includes:
 
 The dashboard is built using exported CSV files from the Data Warehouse and provides:
 
-✔️No configuration required
-✔️Works immediately after running the pipeline
-✔️Designed for easy consumption by recruiters and stakeholders
+✔No configuration required
+✔Works immediately after running the pipeline
+✔Designed for easy consumption by recruiters and stakeholders
 
 **Key Metrics**
-*     Total Revenue
-*     Total Orders
-*     Total Customers
-*     Average Order Value
+
+* Total Revenue
+* Total Orders
+* Total Customers
+* Average Order Value
+
 **Visualizations**
-*     Monthly Sales Trend
-*     Top Countries by Sales
-*     Top Products
-*     Customer Analysis
+
+* Monthly Sales Trend
+* Top Countries by Sales
+* Top Products
+* Customer Analysis
 
 **File Location**
 ```
