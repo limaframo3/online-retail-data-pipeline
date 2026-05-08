@@ -23,9 +23,9 @@ The solution follows a layered data engineering approach:
    * Loads cleaned data into DuckDB (retail.db)
    * Creates staging tables (sales_base, stg_time, sales_staging)
    * Applies business rules and filters:
-*     *Removes invalid transactions (returns, test data, adjustments)
-*     *Ensures valid quantities, prices, and dates
-* Prepares structured data for the Data Warehouse
+     * Removes invalid transactions (returns, test data, adjustments)
+     * Ensures valid quantities, prices, and dates
+   * Prepares structured data for the Data Warehouse
       
 3. **Data Warehouse (Star Schema)**
       * Builds dimension and fact tables
@@ -45,7 +45,7 @@ The solution follows a layered data engineering approach:
     * Works immediately after pipeline execution
 
 ## 📂 Project Structure
-
+```
 OnlineRetail/
 ├── scripts/
 │   ├── data_ingestion.py
@@ -72,9 +72,11 @@ OnlineRetail/
 ├── run_pipeline.sh
 ├── README.md
 └── .gitignore
+```
 
 ## 🔄 Pipeline Flow
 
+```
 data/raw/Online Retail.csv
         ↓
 data/processed/cleaned_sales.csv
@@ -87,14 +89,16 @@ output/powerbi/*.csv
         ↓
 Power BI Dashboard
 
+```
+
 ## ⚙️ Technologies Used
 
-Python
-Pandas
-DuckDB
-SQL
-Power BI
-Bash
+* Python
+* Pandas
+* DuckDB
+* SQL
+* Power BI
+* Bash
 
 ## 📦 Environment & Dependencies
 
@@ -106,9 +110,9 @@ This project uses a virtual environment to ensure dependency isolation and repro
 **Activate environment**
 
 **Mac/Linux**:
-
+```
  source venv/bin/activate
-
+```
 **Windows:**
 
  venv\Scripts\activate
