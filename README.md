@@ -212,11 +212,9 @@ output/powerbi/
 
 The dashboard is built using exported CSV files from the Data Warehouse and provides:
 
-✔No configuration required
-
-✔Works immediately after running the pipeline
-
-✔Designed for easy consumption by recruiters and stakeholders
+* No configuration required
+* Works immediately after running the pipeline
+* Designed for easy consumption by recruiters and stakeholders
 
 **Key Metrics**
 
