@@ -15,10 +15,14 @@ The pipeline is fully modular, reproducible, and can be executed end-to-end with
 The solution follows a layered data engineering approach:
 
 1. **Data Ingestion (Python + Pandas)**
-   * Reads raw CSV data
-   * Performs initial cleaning and standardization
-   * Handles null values, trims strings, and enforces data types
-   * Outputs a cleaned dataset (cleaned_sales.csv)
+   * Reads the original Excel dataset (`Online Retail.xlsx`)
+   * Automatically converts the source file into a raw CSV format (`Online_Retail.csv`)
+   * Performs initial data cleaning and standardization
+   * Handles null values, trims text fields, and normalizes column names
+   * Enforces consistent data types and formatting rules
+   * Standardizes country values using `pycountry`
+   * Removes exact duplicate records
+   * Generates a cleaned dataset (`cleaned_sales.csv`)
   
 2. **Data Transformation (DuckDB - Staging Layer)**
    * Loads cleaned data into DuckDB (retail.db)
@@ -49,28 +53,32 @@ The solution follows a layered data engineering approach:
 ```
 OnlineRetail/
 ├── scripts/
-│   ├── data_ingestion.py
-│   ├── transformations.py
-│   └── build_datawarehouse.py
+│   ├── data_ingestion.py        # Reads Excel, creates raw CSV, cleans data
+│   ├── transformations.py       # Builds staging tables in DuckDB
+│   └── build_datawarehouse.py   # Builds dimensional data warehouse
 │
 ├── notebooks/
 │   └── eda_online_retail.ipynb
 │
 ├── dashboards/
-│   └── online_retail_dashboard.pbix
+│   └── online_retail_dashboard.pbix  # Dasboard en Power Bi
 │
 ├── data/
 │   ├── raw/
+│   │   ├── Online Retail.xlsx   # Original dataset
+│   │   └── Online_Retail.csv    # Auto-generated raw CSV
 │   └── processed/
+│       └── cleaned_sales.csv    # Cleaned dataset
 │
 ├── output/
-│   └── powerbi/          # CSV files for Power BI
+│   └── powerbi/                 # CSV exports for Power BI
 │
-├── db/
-├── logs/
+├── db/                          # DuckDB database files
+├── logs/                        # Pipeline execution logs
 │
-├── run_pipeline.py
-├── run_pipeline.sh
+├── run_pipeline.py              # Python pipeline orchestrator
+├── run_pipeline.sh              # Bash execution helper
+├── requirements.txt
 ├── README.md
 └── .gitignore
 ```
@@ -78,6 +86,8 @@ OnlineRetail/
 ## 🔄 Pipeline Flow
 
 ```
+data/raw/Online Retail.xlsx
+        ↓
 data/raw/Online Retail.csv
         ↓
 data/processed/cleaned_sales.csv
@@ -100,16 +110,21 @@ Power BI Dashboard
 * SQL
 * Power BI
 * Bash
+* Git & GitHub
 
 ## 📦 Environment & Dependencies
 
 This project was developed using:
 
 - Python 3.12+
-- DuckDB
 - Pandas
+- DuckDB
+- OpenPyXL
+- PyCountry
 - Matplotlib
 - Power BI
+- Git & GitHub
+- Bash
 
 Dependencies are managed through a clean `requirements.txt` file using controlled version ranges.
 
