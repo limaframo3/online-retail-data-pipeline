@@ -9,6 +9,7 @@ import pycountry
 # =========================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+EXCEL_PATH = BASE_DIR / "data" / "raw" / "Online Retail.xlsx"
 INPUT_PATH = BASE_DIR / "data" / "raw" / "Online_Retail.csv"
 OUTPUT_PATH = BASE_DIR / "data" / "processed" / "cleaned_sales.csv"
 LOG_PATH = BASE_DIR / "logs" / "pipeline.log"
@@ -21,6 +22,7 @@ def setup_logger() -> None:
     """Configure logging for the ingestion process."""
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    INPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
@@ -35,11 +37,32 @@ def setup_logger() -> None:
 # =========================================================
 # EXTRACT
 # =========================================================
-def load_data(file_path: Path) -> pd.DataFrame:
-    """Load raw Online Retail dataset."""
-    logging.info(f"Loading raw file: {file_path}")
-    return pd.read_csv(file_path, encoding="ISO-8859-1")
 
+def load_data(excel_path: Path, csv_output_path: Path) -> pd.DataFrame:
+    """
+    Load Online Retail Excel dataset,
+    convert it to CSV,
+    and return DataFrame.
+    """
+
+    logging.info(f"Reading Excel file: {excel_path}")
+
+    # Read Excel file
+    df = pd.read_excel(excel_path)
+
+    logging.info("Excel file loaded successfully.")
+
+    # Export raw CSV
+    df.to_csv(csv_output_path, index=False, encoding="utf-8")
+
+    logging.info(f"Raw CSV created at: {csv_output_path}")
+
+    # Read CSV file
+    df = pd.read_csv(csv_output_path, encoding="utf-8")
+
+    logging.info("CSV file loaded successfully.")
+
+    return df
 
 # =========================================================
 # TRANSFORM
@@ -197,7 +220,7 @@ def main() -> None:
     logging.info("Starting ingestion pipeline")
 
     try:
-        df = load_data(INPUT_PATH)
+        df = load_data(EXCEL_PATH, INPUT_PATH)
         df = standardize_column_names(df)
         df = trim_text_values(df)
         df = normalize_text_columns(df)
