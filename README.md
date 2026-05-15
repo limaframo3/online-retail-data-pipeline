@@ -164,9 +164,12 @@ This project uses the Online Retail dataset.
 **Download it from:**
 https://archive.ics.uci.edu/ml/datasets/Online+Retail
 
-After downloading, place the file in:
+After downloading:
+
+1. Extract the ZIP file
+2. Move `Online Retail.xlsx` file into the route:
 ```
-data/raw/Online_Retail.csv
+data/raw/
 ```
 
 ## 🚀 How to Run the Project
