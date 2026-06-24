@@ -226,6 +226,51 @@ output/powerbi/
 ├── dim_invoice.csv
 └── fact_sales.csv
 ```
+
+✔️ **Automated Pipeline Report**
+```
+output/pipeline_report.txt
+```
+The report is automatically generated as the final step of the pipeline and provides a summary of business KPIs and execution results.
+
+**Report Contents**
+* Pipeline execution timestamp
+* Total Revenue
+* Total Orders
+* Total Customers
+* Total Products
+* Top 5 Countries by Revenue
+* Top 5 Products by Revenue
+* Pipeline execution status
+
+**Example**
+
+ONLINE RETAIL PIPELINE REPORT
+=============================
+
+Generated at: 2026-06-23 15:30:12
+
+GENERAL METRICS
+---------------
+
+Total Revenue: $8,911,407.90
+Total Orders: 22,190
+Total Customers: 4,372
+Total Products: 3,684
+
+TOP 5 COUNTRIES BY REVENUE
+--------------------------
+
+United Kingdom: $7,308,392.54
+Netherlands: $285,446.34
+EIRE: $265,545.90
+Germany: $228,867.14
+France: $209,024.05
+
+PIPELINE STATUS
+---------------
+Status: Completed successfully
+
 ## 📊 Power BI Dashboard
 
 The dashboard is built using exported CSV files from the Data Warehouse and provides:
@@ -302,6 +347,8 @@ notebooks/eda_online_retail.ipynb
 * Logging and execution tracking
 * Reproducible and modular design
 * Isolated environment with dependency management
+* Automated business reporting
+* Automated KPI and pipeline execution reporting
 
 ## 💡 Design Decisions
 
