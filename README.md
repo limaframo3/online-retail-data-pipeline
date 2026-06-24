@@ -44,7 +44,14 @@ The solution follows a layered data engineering approach:
    * Enables plug-and-play integration with BI tools
    * Eliminates need for database configuration
 
-5. **Analytics Layer (Power BI)**
+5. **Automated Reporting**
+   * Generates a pipeline execution report
+   * Produces business KPI summaries
+   * Identifies top countries and products by revenue
+   * Stores results in `output/pipeline_report.txt`
+   * Executes automatically as the final pipeline step
+   
+6. **Analytics Layer (Power BI)**
     * Consumes generated CSV files
     * Provides dashboards and KPIs 
     * Works immediately after pipeline execution
@@ -55,13 +62,14 @@ OnlineRetail/
 ├── scripts/
 │   ├── data_ingestion.py        # Reads Excel, creates raw CSV, cleans data
 │   ├── transformations.py       # Builds staging tables in DuckDB
-│   └── build_datawarehouse.py   # Builds dimensional data warehouse
+│   ├── build_datawarehouse.py   # Builds dimensional data warehouse
+│   └── generate_report.py       # Automated pipeline report   
 │
 ├── notebooks/
 │   └── eda_online_retail.ipynb
 │
 ├── dashboards/
-│   └── online_retail_dashboard.pbix  # Dasboard en Power Bi
+│   └── online_retail_dashboard.pbix  # Power BI dashboard
 │
 ├── data/
 │   ├── raw/
@@ -71,7 +79,8 @@ OnlineRetail/
 │       └── cleaned_sales.csv    # Cleaned dataset
 │
 ├── output/
-│   └── powerbi/                 # CSV exports for Power BI
+│   ├── powerbi/                 # CSV exports for Power BI
+│   └── pipeline_report.txt      # Generates automated pipeline report
 │
 ├── db/                          # DuckDB database files
 ├── logs/                        # Pipeline execution logs
@@ -96,8 +105,10 @@ db/retail.db (staging layer)
         ↓
 db/DW_Online_Retail.db (data warehouse)
         ↓
-output/powerbi/*.csv
-        ↓
+ ┌─────────────────────┬──────────────────┐
+ ↓                     ↓
+output/powerbi/*.csv   output/pipeline_report.txt
+ ↓
 Power BI Dashboard
 
 ```
@@ -362,6 +373,7 @@ notebooks/eda_online_retail.ipynb
   * Transformation (Staging)
   * Data Warehouse
   * Analytics output
+* Automated reporting layer implemented for KPI generation and pipeline monitoring
 
 ## 🎯 Author
 **Lina Marcela Franco Montes**
