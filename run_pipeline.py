@@ -26,6 +26,10 @@ PIPELINE_STEPS = [
         "name": "Build Data Warehouse",
         "script": SCRIPTS_DIR / "build_datawarehouse.py"
     },
+   {
+        "name": "Generate Report",
+        "script": SCRIPTS_DIR / "generate_report.py"
+    },
 ]
 
 
