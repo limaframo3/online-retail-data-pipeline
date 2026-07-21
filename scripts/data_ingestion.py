@@ -2,17 +2,24 @@ from pathlib import Path
 import logging
 import pandas as pd
 import pycountry
+import json
 
 
 # =========================================================
 # CONFIGURATION
 # =========================================================
-BASE_DIR = Path(__file__).resolve().parent.parent
 
-EXCEL_PATH = BASE_DIR / "data" / "raw" / "Online Retail.xlsx"
-INPUT_PATH = BASE_DIR / "data" / "raw" / "Online_Retail.csv"
-OUTPUT_PATH = BASE_DIR / "data" / "processed" / "cleaned_sales.csv"
-LOG_PATH = BASE_DIR / "logs" / "pipeline.log"
+BASE_DIR = Path(__file__).resolve().parent.parent
+CONFIG_PATH = BASE_DIR / "config.json"
+
+with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
+    CONFIG = json.load(config_file)
+
+
+EXCEL_PATH = BASE_DIR / CONFIG["paths"]["excel"]
+INPUT_PATH = BASE_DIR / CONFIG["paths"]["input"]
+OUTPUT_PATH = BASE_DIR / CONFIG["paths"]["output"]
+LOG_PATH = BASE_DIR / CONFIG["paths"]["log"]
 
 
 # =========================================================

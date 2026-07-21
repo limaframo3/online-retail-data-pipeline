@@ -1,0 +1,13 @@
+{
+  "paths": {
+    "excel": "data/raw/Online Retail.xlsx",
+    "input": "data/raw/Online_Retail.csv",
+    "output": "data/processed/cleaned_sales.csv",
+    "database": "db/DW_Online_Retail.db",
+    "log": "logs/pipeline.log"
+  },
+  "pipeline": {
+    "version": "1.0",
+    "environment": "dev"
+  }
+}
