@@ -25,54 +25,77 @@ def generate_report() -> None:
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    conn = duckdb.connect(str(DB_PATH), read_only=True)
+    connection = duckdb.connect(str(DB_PATH), read_only=True)
 
-    total_revenue = conn.execute("""
-        SELECT ROUND(SUM(quantity * unitprice), 2)
-        FROM fact_sales
-    """).fetchone()[0]
+    try:
+        total_revenue = connection.execute("""
+            SELECT COALESCE(ROUND(SUM(total_venta), 2), 0)
+            FROM fact_sales;
+        """).fetchone()[0]
 
-    total_orders = conn.execute("""
-        SELECT COUNT(DISTINCT invoiceno)
-        FROM fact_sales
-    """).fetchone()[0]
+        total_orders = connection.execute("""
+            SELECT COUNT(DISTINCT invoiceno)
+            FROM fact_sales;
+        """).fetchone()[0]
 
-    total_customers = conn.execute("""
-        SELECT COUNT(DISTINCT customerid)
-        FROM fact_sales
-        WHERE customerid IS NOT NULL
-    """).fetchone()[0]
+        total_customers = connection.execute("""
+            SELECT COUNT(DISTINCT customerid)
+            FROM fact_sales
+            WHERE customerid IS NOT NULL;
+        """).fetchone()[0]
 
-    total_products = conn.execute("""
-        SELECT COUNT(DISTINCT stockcode)
-        FROM fact_sales
-    """).fetchone()[0]
+        total_products = connection.execute("""
+            SELECT COUNT(DISTINCT stockcode)
+            FROM dim_product;
+        """).fetchone()[0]
 
-    top_countries = conn.execute("""
-        SELECT
-            c.country,
-            ROUND(SUM(f.quantity * f.unitprice), 2) AS revenue
-        FROM fact_sales f
-        LEFT JOIN dim_country c
-            ON f.country_key = c.country_key
-        GROUP BY c.country
-        ORDER BY revenue DESC
-        LIMIT 5
-    """).fetchall()
+        scd2_metrics = connection.execute("""
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE is_current = TRUE
+                ) AS current_versions,
+                COUNT(*) FILTER (
+                    WHERE is_current = FALSE
+                ) AS historical_versions,
+                COUNT(DISTINCT stockcode) FILTER (
+                    WHERE is_current = FALSE
+                ) AS products_with_history
+            FROM dim_product;
+        """).fetchone()
 
-    top_products = conn.execute("""
-        SELECT
-            p.description,
-            ROUND(SUM(f.quantity * f.unitprice), 2) AS revenue
-        FROM fact_sales f
-        LEFT JOIN dim_product p
-            ON f.stockcode = p.stockcode
-        GROUP BY p.description
-        ORDER BY revenue DESC
-        LIMIT 5
-    """).fetchall()
+        top_countries = connection.execute("""
+            SELECT
+                country.country,
+                ROUND(SUM(fact.total_venta), 2) AS revenue
+            FROM fact_sales AS fact
+            INNER JOIN dim_country AS country
+                ON fact.country_key = country.country_key
+            GROUP BY country.country
+            ORDER BY revenue DESC
+            LIMIT 5;
+        """).fetchall()
 
-    conn.close()
+        # Resolve each fact through its historical product_key, then group all
+        # versions under the product's single current business description.
+        top_products = connection.execute("""
+            SELECT
+                current_product.stockcode,
+                current_product.description,
+                ROUND(SUM(fact.total_venta), 2) AS revenue
+            FROM fact_sales AS fact
+            INNER JOIN dim_product AS product_version
+                ON fact.product_key = product_version.product_key
+            INNER JOIN dim_product AS current_product
+                ON product_version.stockcode = current_product.stockcode
+               AND current_product.is_current = TRUE
+            GROUP BY
+                current_product.stockcode,
+                current_product.description
+            ORDER BY revenue DESC
+            LIMIT 5;
+        """).fetchall()
+    finally:
+        connection.close()
 
     log_status = "Log file found" if LOG_PATH.exists() else "Log file not found"
 
@@ -90,6 +113,9 @@ def generate_report() -> None:
         f"Total Orders: {total_orders:,}",
         f"Total Customers: {total_customers:,}",
         f"Total Products: {total_products:,}",
+        f"Current Product Versions: {scd2_metrics[0]:,}",
+        f"Historical Product Versions: {scd2_metrics[1]:,}",
+        f"Products with History: {scd2_metrics[2]:,}",
         "",
         "TOP 5 COUNTRIES BY REVENUE",
         "-" * 30,
@@ -104,8 +130,10 @@ def generate_report() -> None:
         "-" * 29,
     ])
 
-    for product, revenue in top_products:
-        report_lines.append(f"{product}: ${revenue:,.2f}")
+    for stockcode, product, revenue in top_products:
+        report_lines.append(
+            f"{stockcode} - {product}: ${revenue:,.2f}"
+        )
 
     report_lines.extend([
         "",

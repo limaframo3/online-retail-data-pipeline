@@ -1,6 +1,6 @@
 🛍️ **Online Retail Data Pipeline & Analytics Dashboard**
 
-🚀 One-command pipeline | 📊 Power BI ready | ⚡ DuckDB-powered
+🚀 One-command pipeline | 📊 Power BI ready | ⚡ DuckDB-powered | 🕒 SCD Type 2
 
 📌 **Overview**
 
@@ -35,8 +35,10 @@ The solution follows a layered data engineering approach:
 3. **Data Warehouse (Star Schema)**
       * Builds dimension and fact tables
       * Uses surrogate keys and sequences
-      * Ensures referential integrity
-      * Applies deduplication logic
+      * Implements SCD Type 2 history for `dim_product`
+      * Preserves historical product descriptions and validity periods
+      * Assigns each sale to the correct product version through `product_key`
+      * Applies referential, temporal, and deduplication validations
       
 4. **Data Export (CSV for BI Consumption)**
    * Exports dimension and fact tables to CSV
@@ -47,6 +49,7 @@ The solution follows a layered data engineering approach:
 5. **Automated Reporting**
    * Generates a pipeline execution report
    * Produces business KPI summaries
+   * Includes current and historical SCD2 product metrics
    * Identifies top countries and products by revenue
    * Stores results in `output/pipeline_report.txt`
    * Executes automatically as the final pipeline step
@@ -60,10 +63,12 @@ The solution follows a layered data engineering approach:
 ```
 OnlineRetail/
 ├── scripts/
-│   ├── data_ingestion.py        # Reads Excel, creates raw CSV, cleans data
-│   ├── transformations.py       # Builds staging tables in DuckDB
-│   ├── build_datawarehouse.py   # Builds dimensional data warehouse
-│   └── generate_report.py       # Automated pipeline report   
+│   ├── data_ingestion.py           # Reads Excel, creates raw CSV, cleans data
+│   ├── transformations.py          # Builds staging tables in DuckDB
+│   ├── build_datawarehouse.py      # Builds the DW and SCD2 product history
+│   ├── apply_scd2_demo_changes.py  # Applies controlled SCD2 source changes
+│   ├── verify_scd2_demo.py         # Verifies historical and current versions
+│   └── generate_report.py          # Generates the automated pipeline report
 │
 ├── notebooks/
 │   └── eda_online_retail.ipynb
@@ -75,21 +80,30 @@ OnlineRetail/
 │   ├── raw/
 │   │   ├── Online Retail.xlsx   # Original dataset
 │   │   └── Online_Retail.csv    # Auto-generated raw CSV
-│   └── processed/
-│       └── cleaned_sales.csv    # Cleaned dataset
+│   ├── processed/
+│   │   └── cleaned_sales.csv    # Cleaned dataset
+│   └── demo/
+│       └── scd2_product_changes.xlsx  # Demo reference workbook
 │
 ├── output/
 │   ├── powerbi/                 # CSV exports for Power BI
-│   └── pipeline_report.txt      # Generates automated pipeline report
+│   └── pipeline_report.txt      # Automated KPI and SCD2 report
 │
-├── db/                          # DuckDB database files
-├── logs/                        # Pipeline execution logs
+├── db/
+│   ├── retail.db                # Staging database
+│   └── DW_Online_Retail.db      # Dimensional Data Warehouse
 │
+├── logs/
+│   ├── pipeline.log             # Main pipeline execution log
+│   ├── scd2_demo.log            # Controlled demo changes log
+│   └── scd2_verification.log    # SCD2 verification log
+│
+├── config.json                  # Centralized pipeline configuration
 ├── run_pipeline.py              # Python pipeline orchestrator
 ├── run_pipeline.sh              # Bash execution helper
 ├── requirements.txt
 ├── README.md
-└── .gitignore
+└── .gitignore 
 ```
 
 ## 🔄 Pipeline Flow
@@ -141,6 +155,29 @@ Dependencies are managed through a clean `requirements.txt` file using controlle
 
 A virtual environment (`.venv`) is recommended to ensure dependency isolation and reproducibility.
 
+## ⚙️ Pipeline Configuration
+
+The pipeline uses a centralized `config.json` file to manage input, output, database, log, and execution settings.
+
+```json
+{
+  "paths": {
+    "excel": "data/raw/Online Retail.xlsx",
+    "input": "data/raw/Online_Retail.csv",
+    "output": "data/processed/cleaned_sales.csv",
+    "database": "db/DW_Online_Retail.db",
+    "log": "logs/pipeline.log"
+  },
+  "pipeline": {
+    "version": "1.0",
+    "environment": "dev"
+  }
+}
+```
+All paths are relative to the project root, allowing the pipeline to run consistently across different environments.
+
+The configuration is loaded automatically by the pipeline orchestrator and supporting scripts where applicable
+
 ## 📊 Data Warehouse Model
 
 **Dimensions**
@@ -158,15 +195,42 @@ A virtual environment (`.venv`) is recommended to ensure dependency isolation an
 
 The model follows a star schema design optimized for analytical queries.
 
+🕒 SCD Type 2 - Product Dimension
+
+`dim_product` preserves product-description changes instead of overwriting previous values.
+
+```   
+  Column                  Purpose
+`product_key`      Surrogate key for each product version
+`stockcode`        Product business key
+`description`      Description valid for the version period
+`effective_from`   Timestamp when the version became valid
+`effective_to`     Exclusive end timestamp; NULL for the current version
+`is_current`       Identifies the active product version
+```
+The SCD2 implementation enforces the following rules:
+
+* Each product has exactly one current version
+* Historical versions are closed with `is_current = FALSE`
+* The previous effective_to matches the next `effective_from`
+* Version validity periods cannot overlap or contain gaps
+* Duplicate business versions are rejected
+* Facts reference the product version valid at the transaction timestamp
+
+The relationship between `fact_sales.product_key` and `dim_product.product_key` is validated logically by the pipeline instead of using a physical DuckDB foreign-key constraint. This avoids DuckDB limitations when closing referenced SCD Type 2 versions while preserving referential and temporal validation.
+
 ## 🧪 Data Quality & Validation
 
 The pipeline includes:
 
-  * Null validation checks
-  * Data type enforcement
+  * Null validation checks 
+  * Data type enforcement 
   * Business rule filtering (invalid transactions removed)
-  * Deduplication using window functions
-  * Referential integrity via foreign keys
+  * Deduplication using window functions 
+  * Physical foreign keys for stable dimensions 
+  * Logical product-key integrity validation for SCD2 
+  * Product-version validity and continuity checks 
+  * Detection of null, orphan, duplicated, and temporally invalid keys
 
 ## 📥 Dataset
 
@@ -211,12 +275,75 @@ python -m venv .venv
 ```
 pip install -r requirements.txt
 ```
+### 4. Review the configuration
 
-### 4. Run the pipeline
+Before running the pipeline, verify that the paths defined in `config.json` match the project structure.
 
+The default configuration uses relative paths, so no changes are normally required.
+
+### 5. Run the pipeline
+
+Run directly with Python:
 ```
 python run_pipeline.py
 ```
+🕒 SCD Type 2 Demonstration
+
+The repository includes a controlled demonstration that allows recruiters and reviewers to observe a product-description change across two pipeline executions.
+
+1. Execute the initial load
+```
+./run_pipeline.sh
+```
+Alternatively:
+```
+python run_pipeline.py
+```
+2. Apply controlled product changes
+```
+python scripts/apply_scd2_demo_changes.py
+```
+The utility:
+
+* Reads current product descriptions from `dim_product` 
+* Adds two controlled transactions to `data/raw/Online Retail.xlsx`
+* Creates `data/raw/Online Retail.before_scd2_demo.xlsx` 
+* Records the operation in `logs/scd2_demo.log` 
+* Prevents the same demo rows from being applied twice
+
+The workbook `data/demo/scd2_product_changes.xlsx` documents the demonstration scenario. The Python utility applies the controlled changes automatically.
+
+3. Execute the incremental load
+```
+python run_pipeline.py
+```
+On Mac/Linux, `./run_pipeline.sh` can be used instead.
+
+Do not delete `db/DW_Online_Retail.db` between the initial and incremental executions. The existing database contains the original versions that must be closed and preserved.
+
+4. Verify the SCD2 result
+```
+python scripts/verify_scd2_demo.py
+```
+Expected result:
+
+Validation failures:     0
+Validation status:       PASSED
+
+The verification confirms:
+
+* A historical and a current version exist for each demo product 
+* Each product has exactly one current version 
+* Historical validity periods are closed correctly 
+* Demo facts reference the correct `product_key` 
+* No orphan product keys or temporal inconsistencies exist
+
+Restore the original source
+```
+python scripts/apply_scd2_demo_changes.py --restore
+```
+Restoring the Excel source does not remove product history already loaded into DuckDB. 
+To repeat the entire demonstration from a clean state, restore the source and recreate `db/retail.db and db/DW_Online_Retail.db` before running the initial load again.
 
 ## 📊 Output
 
@@ -250,8 +377,11 @@ The report is automatically generated as the final step of the pipeline and prov
 * Total Orders
 * Total Customers
 * Total Products
-* Top 5 Countries by Revenue
-* Top 5 Products by Revenue
+* Current Product Versions 
+* Historical Product Versions 
+* Products with History 
+* Top 5 Countries by Revenue 
+* Top 5 Products by Revenue without SCD2 duplication 
 * Pipeline execution status
 
 **Example**
@@ -268,6 +398,9 @@ Total Revenue: $8,911,407.90
 Total Orders: 22,190
 Total Customers: 4,372
 Total Products: 3,684
+Current Product Versions: 3,684
+Historical Product Versions: 2
+Products with History: 2
 
 TOP 5 COUNTRIES BY REVENUE
 --------------------------
@@ -281,6 +414,13 @@ France: $209,024.05
 PIPELINE STATUS
 ---------------
 Status: Completed successfully
+
+📝 Execution Logs
+
+   Log file                         Purpose
+`logs/pipeline.log`            Main pipeline steps, execution times, output, and errors
+`logs/scd2_demo.log`           Controlled source changes and restoration events
+`logs/scd2_verification.log`   SCD2 validation results and detected failures
 
 ## 📊 Power BI Dashboard
 
@@ -350,10 +490,12 @@ notebooks/eda_online_retail.ipynb
 
 ## 🧠 Key Features
 
+* Centralized JSON-based configuration
 * End-to-end data pipeline
 * Layered architecture (raw → processed → staging → DW → BI)
 * DuckDB-based transformations
 * Star schema data modeling
+* SCD Type 2 product-history management
 * Automated CSV export for BI tools
 * Logging and execution tracking
 * Reproducible and modular design
@@ -367,6 +509,8 @@ notebooks/eda_online_retail.ipynb
 * The pipeline is designed to be reproducible using relative paths
 * The virtual environment (venv/) is excluded via .gitignore
 * DuckDB used as lightweight analytical database
+* SCD Type 2 used to preserve changes in product descriptions
+* Product referential integrity validated logically to support DuckDB SCD2 updates
 * CSV export layer implemented for easy BI integration
 * Separation of concerns:
   * Ingestion & Cleaning
