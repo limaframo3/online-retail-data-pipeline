@@ -17,8 +17,8 @@ with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
 
 
 EXCEL_PATH = BASE_DIR / CONFIG["paths"]["excel"]
-INPUT_PATH = BASE_DIR / CONFIG["paths"]["input"]
-OUTPUT_PATH = BASE_DIR / CONFIG["paths"]["output"]
+RAW_PARQUET_PATH = BASE_DIR / CONFIG["paths"]["raw_parquet"]
+PROCESSED_PARQUET_PATH = BASE_DIR / CONFIG["paths"]["processed_parquet"]
 LOG_PATH = BASE_DIR / CONFIG["paths"]["log"]
 
 
@@ -28,8 +28,8 @@ LOG_PATH = BASE_DIR / CONFIG["paths"]["log"]
 def setup_logger() -> None:
     """Configure logging for the ingestion process."""
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    INPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    RAW_PARQUET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PROCESSED_PARQUET_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
@@ -45,29 +45,44 @@ def setup_logger() -> None:
 # EXTRACT
 # =========================================================
 
-def load_data(excel_path: Path, csv_output_path: Path) -> pd.DataFrame:
+def load_data(excel_path: Path, parquet_output_path: Path) -> pd.DataFrame:
     """
     Load Online Retail Excel dataset,
-    convert it to CSV,
-    and return DataFrame.
+    convert it to raw Parquet,
+    and return the Parquet DataFrame.
     """
 
     logging.info(f"Reading Excel file: {excel_path}")
 
-    # Read Excel file
-    df = pd.read_excel(excel_path)
+    # Read source Excel file
+    df = pd.read_excel(
+        excel_path,
+        dtype={
+            "InvoiceNo": "string",
+            "StockCode": "string",
+            "Description": "string",
+            "Country": "string"
+        }
+    )
 
     logging.info("Excel file loaded successfully.")
 
-    # Export raw CSV
-    df.to_csv(csv_output_path, index=False, encoding="utf-8")
+    # Export raw dataset to Parquet
+    df.to_parquet(
+        parquet_output_path,
+        index=False,
+        engine="pyarrow"
+    )
 
-    logging.info(f"Raw CSV created at: {csv_output_path}")
+    logging.info(f"Raw Parquet created at: {parquet_output_path}")
 
-    # Read CSV file
-    df = pd.read_csv(csv_output_path, encoding="utf-8")
+    # Read raw Parquet file
+    df = pd.read_parquet(
+        parquet_output_path,
+        engine="pyarrow"
+    )
 
-    logging.info("CSV file loaded successfully.")
+    logging.info("Raw Parquet loaded successfully.")
 
     return df
 
@@ -212,10 +227,15 @@ def log_data_quality(df: pd.DataFrame) -> None:
 # =========================================================
 # LOAD
 # =========================================================
+
 def save_data(df: pd.DataFrame, output_path: Path) -> None:
-    """Save cleaned dataset to CSV."""
-    df.to_csv(output_path, index=False)
-    logging.info(f"Cleaned file saved to: {output_path}")
+    """Save cleaned dataset to Parquet."""
+    df.to_parquet(
+        output_path,
+        index=False,
+        engine="pyarrow"
+    )
+    logging.info(f"Cleaned Parquet saved to: {output_path}")
 
 
 # =========================================================
@@ -227,7 +247,7 @@ def main() -> None:
     logging.info("Starting ingestion pipeline")
 
     try:
-        df = load_data(EXCEL_PATH, INPUT_PATH)
+        df = load_data(EXCEL_PATH, RAW_PARQUET_PATH)
         df = standardize_column_names(df)
         df = trim_text_values(df)
         df = normalize_text_columns(df)
@@ -237,7 +257,7 @@ def main() -> None:
         df = reorder_columns(df)
 
         log_data_quality(df)
-        save_data(df, OUTPUT_PATH)
+        save_data(df, PROCESSED_PARQUET_PATH)
 
         logging.info("Ingestion pipeline completed successfully")
 
