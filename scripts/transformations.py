@@ -8,8 +8,8 @@ import logging
 # =========================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-INPUT_PATH = BASE_DIR / "data" / "processed" / "cleaned_sales.csv"
-OUTPUT_PATH = BASE_DIR / "output" / "sales_staging.csv"
+INPUT_PATH = BASE_DIR / "data" / "processed" / "cleaned_sales.parquet"
+OUTPUT_PATH = BASE_DIR / "output" / "sales_staging.parquet"
 DB_PATH = BASE_DIR / "db" / "retail.db"
 LOG_PATH = BASE_DIR / "logs" / "pipeline.log"
 
@@ -36,13 +36,13 @@ def setup_logger():
 # LOAD DATA
 # =========================================================
 def load_raw_data(con):
-    """Load cleaned CSV data into DuckDB raw table."""
+    """Load cleaned parquet data into DuckDB raw table."""
     logging.info("Loading CSV into sales_raw")
 
     con.execute(f"""
     CREATE OR REPLACE TABLE sales_raw AS
     SELECT *
-    FROM read_csv_auto('{str(INPUT_PATH)}', SAMPLE_SIZE=-1);
+    FROM read_parquet('{str(INPUT_PATH)}');
     """)
 
 
@@ -157,8 +157,10 @@ def create_sales_staging(con):
 # EXPORT
 # =========================================================
 def export_data(con):
-    """Export staging table to CSV."""
-    logging.info("Exporting sales_staging to CSV")
+    """Export staging table to Parquet."""
+    logging.info("Exporting sales_staging to Parquet")
+
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     con.execute(f"""
     COPY (
@@ -166,7 +168,7 @@ def export_data(con):
         FROM sales_staging
     )
     TO '{str(OUTPUT_PATH)}'
-    (HEADER, DELIMITER ',');
+    (FORMAT PARQUET, COMPRESSION ZSTD);
     """)
 
 

@@ -259,7 +259,9 @@ def validate_demo(
                 f"Product {stockcode} current version has effective_to"
             )
 
-        if not str(current[2]).endswith(DEMO_DESCRIPTION_SUFFIX):
+        if not str(current[2]).lower().endswith(
+                DEMO_DESCRIPTION_SUFFIX.lower()
+        ):
             failures.append(
                 f"Product {stockcode} current description does not contain "
                 "the SCD2 demo suffix"

@@ -16,16 +16,17 @@ The solution follows a layered data engineering approach:
 
 1. **Data Ingestion (Python + Pandas)**
    * Reads the original Excel dataset (`Online Retail.xlsx`)
-   * Automatically converts the source file into a raw CSV format (`Online_Retail.csv`)
+   * Converts the source dataset into raw Parquet format (`Online_Retail.parquet`)
+   * Reads the raw Parquet dataset for downstream processing
    * Performs initial data cleaning and standardization
    * Handles null values, trims text fields, and normalizes column names
    * Enforces consistent data types and formatting rules
    * Standardizes country values using `pycountry`
    * Removes exact duplicate records
-   * Generates a cleaned dataset (`cleaned_sales.csv`)
+   * Generates the cleaned dataset in Parquet format (`cleaned_sales.parquet`)
   
 2. **Data Transformation (DuckDB - Staging Layer)**
-   * Loads cleaned data into DuckDB (retail.db)
+   * Loads the cleaned Parquet dataset into DuckDB (`retail.db`)
    * Creates staging tables (sales_base, stg_time, sales_staging)
    * Applies business rules and filters:
      * Removes invalid transactions (returns, test data, adjustments)
@@ -63,7 +64,7 @@ The solution follows a layered data engineering approach:
 ```
 OnlineRetail/
 ├── scripts/
-│   ├── data_ingestion.py           # Reads Excel, creates raw CSV, cleans data
+│   ├── data_ingestion.py           # Reads Excel, creates raw Parquet, cleans data 
 │   ├── transformations.py          # Builds staging tables in DuckDB
 │   ├── build_datawarehouse.py      # Builds the DW and SCD2 product history
 │   ├── apply_scd2_demo_changes.py  # Applies controlled SCD2 source changes
@@ -79,9 +80,9 @@ OnlineRetail/
 ├── data/
 │   ├── raw/
 │   │   ├── Online Retail.xlsx   # Original dataset
-│   │   └── Online_Retail.csv    # Auto-generated raw CSV
+│   │   └── Online_Retail.parquet    # Auto-generated raw Parquet dataset
 │   ├── processed/
-│   │   └── cleaned_sales.csv    # Cleaned dataset
+│   │   └── cleaned_sales.parquet    # Cleaned Parquet dataset
 │   └── demo/
 │       └── scd2_product_changes.xlsx  # Demo reference workbook
 │
@@ -111,9 +112,9 @@ OnlineRetail/
 ```
 data/raw/Online Retail.xlsx
         ↓
-data/raw/Online Retail.csv
+data/raw/Online_Retail.parquet
         ↓
-data/processed/cleaned_sales.csv
+data/processed/cleaned_sales.parquet
         ↓
 db/retail.db (staging layer)
         ↓
@@ -136,6 +137,8 @@ Power BI Dashboard
 * Power BI
 * Bash
 * Git & GitHub
+* Apache Parquet
+* PyArrow
 
 ## 📦 Environment & Dependencies
 
@@ -150,6 +153,7 @@ This project was developed using:
 - Power BI
 - Git & GitHub
 - Bash
+- PyArrow
 
 Dependencies are managed through a clean `requirements.txt` file using controlled version ranges.
 
@@ -163,8 +167,8 @@ The pipeline uses a centralized `config.json` file to manage input, output, data
 {
   "paths": {
     "excel": "data/raw/Online Retail.xlsx",
-    "input": "data/raw/Online_Retail.csv",
-    "output": "data/processed/cleaned_sales.csv",
+    "raw_parquet": "data/raw/Online_Retail.parquet",
+    "processed_parquet": "data/processed/cleaned_sales.parquet",
     "database": "db/DW_Online_Retail.db",
     "log": "logs/pipeline.log"
   },
@@ -343,7 +347,7 @@ Restore the original source
 python scripts/apply_scd2_demo_changes.py --restore
 ```
 Restoring the Excel source does not remove product history already loaded into DuckDB. 
-To repeat the entire demonstration from a clean state, restore the source and recreate `db/retail.db and db/DW_Online_Retail.db` before running the initial load again.
+To repeat the entire demonstration from a clean state, restore the source and recreate `db/retail.db` and `db/DW_Online_Retail.db` before running the initial load again.
 
 ## 📊 Output
 
@@ -493,6 +497,7 @@ notebooks/eda_online_retail.ipynb
 * Centralized JSON-based configuration
 * End-to-end data pipeline
 * Layered architecture (raw → processed → staging → DW → BI)
+* Parquet-based raw and processed data layers
 * DuckDB-based transformations
 * Star schema data modeling
 * SCD Type 2 product-history management
@@ -506,6 +511,7 @@ notebooks/eda_online_retail.ipynb
 ## 💡 Design Decisions
 
 * Raw dataset is not included to keep the repository lightweight
+* Parquet is used for raw and processed intermediate datasets to provide efficient columnar storage and consistent schema handling
 * The pipeline is designed to be reproducible using relative paths
 * The virtual environment (venv/) is excluded via .gitignore
 * DuckDB used as lightweight analytical database
