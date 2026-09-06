@@ -4,6 +4,11 @@ import pandas as pd
 import pycountry
 import json
 
+try:
+ from .data_quality import REQUIRED_COLUMNS
+except ImportError:
+    from data_quality import REQUIRED_COLUMNS
+
 
 # =========================================================
 # CONFIGURATION
@@ -19,8 +24,8 @@ with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
 EXCEL_PATH = BASE_DIR / CONFIG["paths"]["excel"]
 RAW_PARQUET_PATH = BASE_DIR / CONFIG["paths"]["raw_parquet"]
 PROCESSED_PARQUET_PATH = BASE_DIR / CONFIG["paths"]["processed_parquet"]
+QUARANTINE_PARQUET_PATH = BASE_DIR / CONFIG["paths"]["quarantine_parquet"]
 LOG_PATH = BASE_DIR / CONFIG["paths"]["log"]
-
 
 # =========================================================
 # LOGGER
@@ -30,6 +35,7 @@ def setup_logger() -> None:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     RAW_PARQUET_PATH.parent.mkdir(parents=True, exist_ok=True)
     PROCESSED_PARQUET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    QUARANTINE_PARQUET_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
@@ -99,6 +105,29 @@ def standardize_column_names(df: pd.DataFrame) -> pd.DataFrame:
         .str.replace(r"\s+", "_", regex=True)
     )
     return df
+
+
+def validate_schema(df: pd.DataFrame) -> None:
+    """Validate that the dataset contains all required columns."""
+
+    actual_columns = set(df.columns)
+    missing_columns = REQUIRED_COLUMNS - actual_columns
+    unexpected_columns = actual_columns - REQUIRED_COLUMNS
+
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        logging.error(f"Schema validation failed. Missing columns: {missing}")
+        raise ValueError(
+            f"Schema validation failed. Missing required columns: {missing}"
+        )
+
+    if unexpected_columns:
+        unexpected = ", ".join(sorted(unexpected_columns))
+        logging.warning(
+            f"Schema validation warning. Unexpected columns: {unexpected}"
+        )
+
+    logging.info("Schema contract validation passed.")
 
 
 def trim_text_values(df: pd.DataFrame) -> pd.DataFrame:
@@ -174,6 +203,30 @@ def convert_data_types(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+def split_valid_and_quarantine(
+    df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Split technically valid records from records
+    that must be sent to quarantine.
+    """
+
+    df = df.copy()
+
+    invalid_mask = (
+        df["quantity"].isna()
+        | df["unitprice"].isna()
+        | df["invoicedate"].isna()
+    )
+
+    quarantine_df = df[invalid_mask].copy()
+    valid_df = df[~invalid_mask].copy()
+
+    logging.info(f"Valid records: {len(valid_df):,}")
+    logging.info(f"Quarantined records: {len(quarantine_df):,}")
+
+    return valid_df, quarantine_df
+
 
 def remove_exact_duplicates(df: pd.DataFrame) -> pd.DataFrame:
     """Remove fully duplicated rows."""
@@ -237,6 +290,25 @@ def save_data(df: pd.DataFrame, output_path: Path) -> None:
     )
     logging.info(f"Cleaned Parquet saved to: {output_path}")
 
+def save_quarantine(df: pd.DataFrame, output_path: Path) -> None:
+    """Save quarantined records to Parquet."""
+
+    if df.empty:
+        if output_path.exists():
+            output_path.unlink()
+            logging.info(f"Previous quarantine file removed: {output_path}")
+
+        logging.info("No quarantined records found.")
+        return
+
+    df.to_parquet(
+        output_path,
+        index=False,
+        engine="pyarrow"
+    )
+
+    logging.info(f"Quarantine Parquet saved to: {output_path}")
+
 
 # =========================================================
 # MAIN
@@ -249,14 +321,17 @@ def main() -> None:
     try:
         df = load_data(EXCEL_PATH, RAW_PARQUET_PATH)
         df = standardize_column_names(df)
+        validate_schema(df)
         df = trim_text_values(df)
         df = normalize_text_columns(df)
         df = standardize_country(df)
         df = convert_data_types(df)
+        df, quarantine_df = split_valid_and_quarantine(df)
         df = remove_exact_duplicates(df)
         df = reorder_columns(df)
 
         log_data_quality(df)
+        save_quarantine(quarantine_df, QUARANTINE_PARQUET_PATH)
         save_data(df, PROCESSED_PARQUET_PATH)
 
         logging.info("Ingestion pipeline completed successfully")

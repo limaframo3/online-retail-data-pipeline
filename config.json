@@ -3,6 +3,7 @@
     "excel": "data/raw/Online Retail.xlsx",
     "raw_parquet": "data/raw/Online_Retail.parquet",
     "processed_parquet": "data/processed/cleaned_sales.parquet",
+    "quarantine_parquet": "data/quarantine/rejected_sales.parquet",
     "staging_parquet": "output/sales_staging.parquet",
     "database": "db/DW_Online_Retail.db",
     "log": "logs/pipeline.log"

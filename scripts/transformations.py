@@ -2,6 +2,23 @@ from pathlib import Path
 import duckdb
 import logging
 
+try:
+ from .data_quality import (
+    EXCLUDED_DESCRIPTION_PATTERNS,
+    EXCLUDED_EXACT_DESCRIPTIONS,
+    MIN_VALID_QUANTITY,
+    MIN_VALID_UNITPRICE,
+    CANCELLATION_INVOICE_PREFIX,
+)
+except ImportError:
+    from data_quality import (
+        EXCLUDED_DESCRIPTION_PATTERNS,
+        EXCLUDED_EXACT_DESCRIPTIONS,
+        MIN_VALID_QUANTITY,
+        MIN_VALID_UNITPRICE,
+        CANCELLATION_INVOICE_PREFIX,
+    )
+
 
 # =========================================================
 # CONFIGURATION
@@ -37,7 +54,7 @@ def setup_logger():
 # =========================================================
 def load_raw_data(con):
     """Load cleaned parquet data into DuckDB raw table."""
-    logging.info("Loading CSV into sales_raw")
+    logging.info("Loading Parquet into sales_raw")
 
     con.execute(f"""
     CREATE OR REPLACE TABLE sales_raw AS
@@ -110,6 +127,23 @@ def create_time_table(con):
     WHERE invoicedate IS NOT NULL;
     """)
 
+def build_description_exclusion_sql() -> str:
+    """Build SQL conditions for excluded commercial descriptions."""
+
+    pattern_conditions = [
+        f"UPPER(description) LIKE '%{pattern}%'"
+        for pattern in EXCLUDED_DESCRIPTION_PATTERNS
+    ]
+
+    exact_conditions = [
+        f"TRIM(description) = '{value}'"
+        for value in EXCLUDED_EXACT_DESCRIPTIONS
+    ]
+
+    return "\n            OR ".join(
+        pattern_conditions + exact_conditions
+    )
+
 
 # =========================================================
 # SALES STAGING
@@ -118,7 +152,9 @@ def create_sales_staging(con):
     """Create sales staging table with valid commercial transactions only."""
     logging.info("Creating sales_staging")
 
-    con.execute("""
+    description_exclusions = build_description_exclusion_sql()
+
+    con.execute(f"""
     CREATE OR REPLACE TABLE sales_staging AS
     SELECT
         invoiceno,
@@ -131,24 +167,12 @@ def create_sales_staging(con):
         country,
         CAST(quantity * unitprice AS DECIMAL(14,2)) AS total_venta
     FROM sales_base
-    WHERE quantity > 0
-      AND unitprice > 0
-      AND invoicedate IS NOT NULL
-      AND invoiceno NOT LIKE 'C%'
-      AND NOT (
-            UPPER(description) LIKE '%POSTAGE%'
-            OR UPPER(description) LIKE '%TEST%'
-            OR UPPER(description) LIKE '%SAMPLE%'
-            OR UPPER(description) LIKE '%ADJUST%'
-            OR UPPER(description) LIKE '%DISCOUNT%'
-            OR UPPER(description) LIKE '%CHARGES%'
-            OR UPPER(description) LIKE '%CARRIAGE%'
-            OR UPPER(description) LIKE '%GIFT%'
-            OR UPPER(description) LIKE '%MANUAL%'
-            OR TRIM(description) = '?'
-            OR UPPER(description) LIKE '%UNKNOWN%'
-            OR UPPER(description) LIKE '%CHECK%'
-            OR UPPER(description) LIKE '%DAMAGED%'
+    WHERE quantity >= {MIN_VALID_QUANTITY}
+    AND unitprice > {MIN_VALID_UNITPRICE}
+    AND invoicedate IS NOT NULL
+    AND invoiceno NOT LIKE '{CANCELLATION_INVOICE_PREFIX}%'
+    AND NOT (
+            {description_exclusions}
         );
     """)
 

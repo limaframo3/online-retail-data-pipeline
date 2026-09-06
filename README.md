@@ -18,28 +18,35 @@ The solution follows a layered data engineering approach:
    * Reads the original Excel dataset (`Online Retail.xlsx`)
    * Converts the source dataset into raw Parquet format (`Online_Retail.parquet`)
    * Reads the raw Parquet dataset for downstream processing
-   * Performs initial data cleaning and standardization
-   * Handles null values, trims text fields, and normalizes column names
+   * Standardizes column names and validates the dataset against a required schema contract
+   * Detects missing required columns before downstream processing
+   * Performs data cleaning and standardization
+   * Trims and normalizes text fields
    * Enforces consistent data types and formatting rules
    * Standardizes country values using `pycountry`
+   * Separates technically invalid records into a quarantine layer
+   * Stores rejected records in `data/quarantine/rejected_sales.parquet` when applicable
    * Removes exact duplicate records
-   * Generates the cleaned dataset in Parquet format (`cleaned_sales.parquet`)
+   * Generates the validated and cleaned dataset in Parquet format (`cleaned_sales.parquet`)
   
 2. **Data Transformation (DuckDB - Staging Layer)**
    * Loads the cleaned Parquet dataset into DuckDB (`retail.db`)
-   * Creates staging tables (sales_base, stg_time, sales_staging)
-   * Applies business rules and filters:
-     * Removes invalid transactions (returns, test data, adjustments)
-     * Ensures valid quantities, prices, and dates
-   * Prepares structured data for the Data Warehouse
-      
+   * Creates staging tables (`sales_base`, `stg_time`, `sales_staging`)
+   * Applies centralized data quality and business rules defined in `scripts/data_quality.py`
+   * Filters invalid commercial transactions, including cancellations, non-positive quantities or prices, and excluded operational descriptions
+   * Prepares structured and validated data for the Data Warehouse
+   * Uses a full-refresh staging strategy, appropriate for the current dataset size
+
 3. **Data Warehouse (Star Schema)**
-      * Builds dimension and fact tables
-      * Uses surrogate keys and sequences
-      * Implements SCD Type 2 history for `dim_product`
-      * Preserves historical product descriptions and validity periods
-      * Assigns each sale to the correct product version through `product_key`
-      * Applies referential, temporal, and deduplication validations
+   * Builds dimension and fact tables using DuckDB
+   * Uses surrogate keys and sequences
+   * Implements incremental and idempotent loading for Data Warehouse tables
+   * Inserts only new dimension members and sales transactions on repeated executions
+   * Implements SCD Type 2 history for `dim_product`
+   * Preserves historical product descriptions and validity periods
+   * Assigns each sale to the correct product version through `product_key`
+   * Prevents duplicate fact records across repeated pipeline executions
+   * Applies referential, temporal, and deduplication validations
       
 4. **Data Export (CSV for BI Consumption)**
    * Exports dimension and fact tables to CSV
@@ -57,19 +64,26 @@ The solution follows a layered data engineering approach:
    
 6. **Analytics Layer (Power BI)**
     * Consumes generated CSV files
-    * Provides dashboards and KPIs 
-    * Works immediately after pipeline execution
+    * Provides dashboards and KPIs
+    * Uses pipeline-generated datasets that can be refreshed in Power BI Desktop
 
 ## 📂 Project Structure
 ```
 OnlineRetail/
 ├── scripts/
-│   ├── data_ingestion.py           # Reads Excel, creates raw Parquet, cleans data 
+│   ├── data_ingestion.py           # Ingestion, schema validation, cleaning, and quarantine
+│   ├── data_quality.py             # Centralized data quality and business rules
 │   ├── transformations.py          # Builds staging tables in DuckDB
-│   ├── build_datawarehouse.py      # Builds the DW and SCD2 product history
+│   ├── build_datawarehouse.py      # Builds the incremental DW and SCD2 product history
 │   ├── apply_scd2_demo_changes.py  # Applies controlled SCD2 source changes
 │   ├── verify_scd2_demo.py         # Verifies historical and current versions
 │   └── generate_report.py          # Generates the automated pipeline report
+│
+├── tests/
+│   ├── test_schema.py              # Schema contract tests
+│   ├── test_quarantine.py          # Technical quarantine tests
+│   ├── test_transformations.py     # Staging business-rule tests
+│   └── test_incremental_load.py    # Incremental and idempotency tests
 │
 ├── notebooks/
 │   └── eda_online_retail.ipynb
@@ -79,32 +93,35 @@ OnlineRetail/
 │
 ├── data/
 │   ├── raw/
-│   │   ├── Online Retail.xlsx   # Original dataset
-│   │   └── Online_Retail.parquet    # Auto-generated raw Parquet dataset
+│   │   ├── Online Retail.xlsx          # Original dataset
+│   │   └── Online_Retail.parquet       # Auto-generated raw Parquet dataset
 │   ├── processed/
-│   │   └── cleaned_sales.parquet    # Cleaned Parquet dataset
+│   │   └── cleaned_sales.parquet       # Validated and cleaned Parquet dataset
+│   ├── quarantine/
+│   │   └── rejected_sales.parquet      # Created only when rejected records exist
 │   └── demo/
-│       └── scd2_product_changes.xlsx  # Demo reference workbook
+│       └── scd2_product_changes.xlsx   # Demo reference workbook
 │
 ├── output/
-│   ├── powerbi/                 # CSV exports for Power BI
-│   └── pipeline_report.txt      # Automated KPI and SCD2 report
+│   ├── powerbi/                     # CSV exports for Power BI
+│   ├── sales_staging.parquet        # Parquet export of the staging dataset
+│   └── pipeline_report.txt          # Automated KPI and SCD2 report
 │
 ├── db/
-│   ├── retail.db                # Staging database
-│   └── DW_Online_Retail.db      # Dimensional Data Warehouse
+│   ├── retail.db                    # Full-refresh staging database
+│   └── DW_Online_Retail.db          # Incrementally loaded Data Warehouse
 │
 ├── logs/
-│   ├── pipeline.log             # Main pipeline execution log
-│   ├── scd2_demo.log            # Controlled demo changes log
-│   └── scd2_verification.log    # SCD2 verification log
+│   ├── pipeline.log                 # Main pipeline execution log
+│   ├── scd2_demo.log                # Controlled demo changes log
+│   └── scd2_verification.log        # SCD2 verification log
 │
-├── config.json                  # Centralized pipeline configuration
-├── run_pipeline.py              # Python pipeline orchestrator
-├── run_pipeline.sh              # Bash execution helper
+├── config.json                      # Centralized pipeline configuration
+├── run_pipeline.py                  # Python pipeline orchestrator
+├── run_pipeline.sh                  # Bash execution helper
 ├── requirements.txt
 ├── README.md
-└── .gitignore 
+└── .gitignore
 ```
 
 ## 🔄 Pipeline Flow
@@ -114,13 +131,32 @@ data/raw/Online Retail.xlsx
         ↓
 data/raw/Online_Retail.parquet
         ↓
-data/processed/cleaned_sales.parquet
+Schema Contract Validation
         ↓
-db/retail.db (staging layer)
+Cleaning & Type Conversion
         ↓
-db/DW_Online_Retail.db (data warehouse)
-        ↓
- ┌─────────────────────┬──────────────────┐
+ ┌──────────────────────────────┬──────────────────────────────┐
+ ↓                              ↓
+Valid Records              Invalid Technical Records
+ ↓                              ↓
+data/processed/            data/quarantine/
+cleaned_sales.parquet      rejected_sales.parquet
+ ↓
+db/retail.db
+Staging Layer (Full Refresh)
+ ↓
+db/DW_Online_Retail.db
+Data Warehouse (Incremental / Idempotent)
+ ↓
+ ┌─────────────────────┬──────────────────────────┐
+ ↓                     ↓
+Standard Dimensions    dim_product (SCD Type 2)
+ ↓                     ↓
+ └──────────┬──────────┘
+            ↓
+        fact_sales
+            ↓
+ ┌─────────────────────┬──────────────────────────┐
  ↓                     ↓
 output/powerbi/*.csv   output/pipeline_report.txt
  ↓
@@ -139,6 +175,7 @@ Power BI Dashboard
 * Git & GitHub
 * Apache Parquet
 * PyArrow
+* Pytest
 
 ## 📦 Environment & Dependencies
 
@@ -154,6 +191,7 @@ This project was developed using:
 - Git & GitHub
 - Bash
 - PyArrow
+- Pytest
 
 Dependencies are managed through a clean `requirements.txt` file using controlled version ranges.
 
@@ -163,14 +201,17 @@ A virtual environment (`.venv`) is recommended to ensure dependency isolation an
 
 The pipeline uses a centralized `config.json` file to manage input, output, database, log, and execution settings.
 
-```json
+```
+json
 {
   "paths": {
-    "excel": "data/raw/Online Retail.xlsx",
-    "raw_parquet": "data/raw/Online_Retail.parquet",
-    "processed_parquet": "data/processed/cleaned_sales.parquet",
-    "database": "db/DW_Online_Retail.db",
-    "log": "logs/pipeline.log"
+     "excel": "data/raw/Online Retail.xlsx",
+     "raw_parquet": "data/raw/Online_Retail.parquet",
+     "processed_parquet": "data/processed/cleaned_sales.parquet",
+     "quarantine_parquet": "data/quarantine/rejected_sales.parquet",
+     "staging_parquet": "output/sales_staging.parquet",
+     "database": "db/DW_Online_Retail.db",
+     "log": "logs/pipeline.log"
   },
   "pipeline": {
     "version": "1.0",
@@ -196,10 +237,9 @@ The configuration is loaded automatically by the pipeline orchestrator and suppo
 ```   
     fact_sales
 ```
-
 The model follows a star schema design optimized for analytical queries.
 
-🕒 SCD Type 2 - Product Dimension
+### 🕒 SCD Type 2 - Product Dimension
 
 `dim_product` preserves product-description changes instead of overwriting previous values.
 
@@ -225,16 +265,45 @@ The relationship between `fact_sales.product_key` and `dim_product.product_key` 
 
 ## 🧪 Data Quality & Validation
 
+Data quality rules are centralized in `scripts/data_quality.py` to keep validation logic consistent across the pipeline.
+
 The pipeline includes:
 
-  * Null validation checks 
-  * Data type enforcement 
-  * Business rule filtering (invalid transactions removed)
-  * Deduplication using window functions 
-  * Physical foreign keys for stable dimensions 
-  * Logical product-key integrity validation for SCD2 
-  * Product-version validity and continuity checks 
-  * Detection of null, orphan, duplicated, and temporally invalid keys
+* Schema contract validation for required source columns
+* Detection of missing required columns before downstream processing
+* Data type enforcement and conversion
+* Technical quarantine for records with invalid core fields
+* Rejected records stored in `data/quarantine/rejected_sales.parquet` when applicable
+* Centralized business rules for quantities, prices, cancellations, and excluded descriptions
+* Exact duplicate removal during ingestion
+* Business-rule filtering in the staging layer
+* Deduplication using window functions
+* Physical foreign keys for stable dimensions
+* Logical product-key integrity validation for SCD Type 2
+* Product-version validity and continuity checks
+* Detection of null, orphan, duplicated, and temporally invalid keys
+
+### Automated Tests
+
+The project uses `pytest` to validate critical pipeline behavior.
+
+Current automated tests cover:
+
+* Schema contract validation
+* Missing required-column detection
+* Technical quarantine for invalid numeric values
+* Technical quarantine for invalid dates
+* Staging business-rule filtering
+* Idempotent fact-table loading
+* Incremental insertion of new sales transactions
+
+Run the complete test suite with:
+
+```bash
+python -m pytest -v
+```
+
+The current suite contains 7 automated tests covering schema validation, quarantine, staging transformations, and incremental Data Warehouse loading.
 
 ## 📥 Dataset
 
@@ -291,7 +360,8 @@ Run directly with Python:
 ```
 python run_pipeline.py
 ```
-🕒 SCD Type 2 Demonstration
+
+### 🕒 SCD Type 2 Demonstration
 
 The repository includes a controlled demonstration that allows recruiters and reviewers to observe a product-description change across two pipeline executions.
 
@@ -317,10 +387,14 @@ The utility:
 
 The workbook `data/demo/scd2_product_changes.xlsx` documents the demonstration scenario. The Python utility applies the controlled changes automatically.
 
-3. Execute the incremental load
+3. Execute the pipeline again
 ```
 python run_pipeline.py
 ```
+The staging layer is rebuilt using a full-refresh strategy, while the Data Warehouse processes the existing and new records using incremental and idempotent loading logic. 
+
+The SCD Type 2 process detects the controlled product-description changes and preserves the previous versions.
+
 On Mac/Linux, `./run_pipeline.sh` can be used instead.
 
 Do not delete `db/DW_Online_Retail.db` between the initial and incremental executions. The existing database contains the original versions that must be closed and preserved.
@@ -348,6 +422,15 @@ python scripts/apply_scd2_demo_changes.py --restore
 ```
 Restoring the Excel source does not remove product history already loaded into DuckDB. 
 To repeat the entire demonstration from a clean state, restore the source and recreate `db/retail.db` and `db/DW_Online_Retail.db` before running the initial load again.
+
+### 6. Run automated tests
+
+Run the complete test suite:
+
+```bash
+python -m pytest -v
+```
+The automated tests validate schema enforcement, technical quarantine, staging business rules, and incremental/idempotent Data Warehouse loading.
 
 ## 📊 Output
 
@@ -428,11 +511,11 @@ Status: Completed successfully
 
 ## 📊 Power BI Dashboard
 
-The dashboard is built using exported CSV files from the Data Warehouse and provides:
+The dashboard is built using CSV files exported from the Data Warehouse and provides:
 
-* No configuration required
-* Works immediately after running the pipeline
-* Designed for easy consumption by recruiters and stakeholders
+* An interactive analytical layer built in Power BI Desktop
+* Refreshable datasets generated automatically by the pipeline
+* Business KPIs and visualizations for recruiters and stakeholders
 
 **Key Metrics**
 
@@ -452,7 +535,9 @@ The dashboard is built using exported CSV files from the Data Warehouse and prov
 ```
 dashboards/online_retail_dashboard.pbix
 ```
-Open using Power BI Desktop (Windows) or Power BI Service (Mac users).
+The interactive `.pbix` dashboard can be opened with Power BI Desktop on Windows.
+
+Power BI Desktop is not natively available for macOS. The dashboard file is therefore included primarily for Windows-based reviewers, while the underlying Power BI-ready CSV datasets are available in `output/powerbi/` for direct inspection.
 
 ## 🔌 Power BI Data Source
 
@@ -462,22 +547,29 @@ output/powerbi/
 ```
 ## ▶️ How to open the dashboard
 
-The dashboard uses CSV files generated by the pipeline.
+The interactive dashboard requires **Power BI Desktop on Windows**.
 
-1. Open the .pbix file
+1. Open:
+```
+dashboards/online_retail_dashboard.pbix
+```
+
 2. If prompted, update the data source:
-   Go to **Transform Data → Data Source Settings**
-   Point to:
-   output/powerbi/
-3. Click Refresh
+**Transform Data → Data Source Settings**
 
-👉 The dashboard will load automatically
+3. Point the data source to:
+```
+output/powerbi/
+```
+
+4. Click **Refresh** to load the datasets generated by the pipeline.
 
 💡 **Notes:**
 
-* No database connection required
-* No additional configuration needed
-* Works across different environments
+* Power BI Desktop is required to open and interact with the `.pbix` file
+* Power BI Desktop is not natively available for macOS
+* The dashboard is not currently published to Power BI Service
+* The generated CSV datasets in `output/powerbi/` can be inspected independently of Power BI
 
 ## 📓 Notebook (EDA)
 
@@ -498,9 +590,14 @@ notebooks/eda_online_retail.ipynb
 * End-to-end data pipeline
 * Layered architecture (raw → processed → staging → DW → BI)
 * Parquet-based raw and processed data layers
+* Schema contract validation before downstream processing
+* Technical quarantine layer for rejected records
+* Centralized data quality and business rules
 * DuckDB-based transformations
 * Star schema data modeling
 * SCD Type 2 product-history management
+* Incremental and idempotent Data Warehouse loading
+* Automated testing with pytest
 * Automated CSV export for BI tools
 * Logging and execution tracking
 * Reproducible and modular design
@@ -512,9 +609,11 @@ notebooks/eda_online_retail.ipynb
 
 * Raw dataset is not included to keep the repository lightweight
 * Parquet is used for raw and processed intermediate datasets to provide efficient columnar storage and consistent schema handling
+* Physical Parquet partitioning was evaluated but intentionally not implemented because the current datasets are small; partitioning can be introduced as a scalability improvement when data volume increases
 * The pipeline is designed to be reproducible using relative paths
 * The virtual environment (venv/) is excluded via .gitignore
 * DuckDB used as lightweight analytical database
+* The staging layer uses a full-refresh strategy because of the current dataset size, while the Data Warehouse uses incremental and idempotent loading to prevent duplicate dimension members and sales transactions
 * SCD Type 2 used to preserve changes in product descriptions
 * Product referential integrity validated logically to support DuckDB SCD2 updates
 * CSV export layer implemented for easy BI integration
@@ -523,6 +622,8 @@ notebooks/eda_online_retail.ipynb
   * Transformation (Staging)
   * Data Warehouse
   * Analytics output
+* Technical validation and commercial business rules are separated: structurally invalid records are quarantined during ingestion, while business filtering is applied in the staging layer
+* Automated pytest tests protect critical schema, quarantine, transformation, and incremental-loading behavior
 * Automated reporting layer implemented for KPI generation and pipeline monitoring
 
 ## 🎯 Author
