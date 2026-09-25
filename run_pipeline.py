@@ -81,6 +81,19 @@ def parse_args() -> argparse.Namespace:
         help="Pipeline stage to execute. Default: all.",
     )
 
+    parser.add_argument(
+        "--mode",
+        choices=["full", "incremental"],
+        default="full",
+        help="Pipeline load mode. Default: full.",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show which pipeline steps would run without executing them.",
+    )
+
     return parser.parse_args()
 
 # =========================================================
@@ -418,11 +431,17 @@ def main() -> None:
     print(f"Version:     {PIPELINE_VERSION}")
     print(f"Environment: {ENVIRONMENT}")
     print("=" * 70)
+    print(f"Mode:        {args.mode}")
+    print(f"Stage:       {args.stage}")
+    print(f"Dry run:     {args.dry_run}")
 
     logging.info("=" * 70)
     logging.info("Starting Online Retail pipeline")
     logging.info("Pipeline version: %s", PIPELINE_VERSION)
     logging.info("Environment: %s", ENVIRONMENT)
+    logging.info("Pipeline mode: %s", args.mode)
+    logging.info("Pipeline stage: %s", args.stage)
+    logging.info("Dry run: %s", args.dry_run)
 
     pipeline_start = time.perf_counter()
 
@@ -431,8 +450,19 @@ def main() -> None:
             if args.stage != "all" and step["stage"] != args.stage:
                 continue
 
-            run_step(step["name"], step["script"])
+            if args.dry_run:
+                print(
+                    f"[DRY RUN] Would execute: "
+                    f"{step['name']} -> {step['script']}"
+                )
+                logging.info(
+                    "[DRY RUN] Would execute: %s -> %s",
+                    step["name"],
+                    step["script"],
+                )
+                continue
 
+            run_step(step["name"], step["script"])
 
             # Display and validate SCD2 immediately after
             # building the Data Warehouse.
@@ -449,10 +479,18 @@ def main() -> None:
         )
 
         print("\n" + "=" * 70)
-        print("ONLINE RETAIL PIPELINE COMPLETED SUCCESSFULLY")
-        print(f"Total execution time: {total_duration:.2f} seconds")
-        print(f"Log file: {LOG_PATH}")
-        print("=" * 70)
+        if args.dry_run:
+            print("\n" + "=" * 70)
+            print("ONLINE RETAIL PIPELINE DRY RUN COMPLETED")
+            print(f"Mode: {args.mode}")
+            print("No pipeline steps were executed.")
+            print("=" * 70)
+        else:
+            print("\n" + "=" * 70)
+            print("ONLINE RETAIL PIPELINE COMPLETED SUCCESSFULLY")
+            print(f"Total execution time: {total_duration:.2f} seconds")
+            print(f"Log file: {LOG_PATH}")
+            print("=" * 70)
 
     except Exception as error:
         total_duration = time.perf_counter() - pipeline_start
