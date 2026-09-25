@@ -4,7 +4,7 @@ import logging
 import subprocess
 import sys
 import time
-
+import argparse
 import duckdb
 
 
@@ -37,23 +37,51 @@ ENVIRONMENT = CONFIG["pipeline"]["environment"]
 
 PIPELINE_STEPS = [
     {
+        "stage": "ingestion",
         "name": "Data Ingestion",
         "script": SCRIPTS_DIR / "data_ingestion.py",
     },
     {
+        "stage": "transformation",
         "name": "Data Transformation",
         "script": SCRIPTS_DIR / "transformations.py",
     },
     {
+        "stage": "warehouse",
         "name": "Build Data Warehouse",
         "script": SCRIPTS_DIR / "build_datawarehouse.py",
     },
     {
+        "stage": "report",
         "name": "Generate Report",
         "script": SCRIPTS_DIR / "generate_report.py",
     },
 ]
 
+# =========================================================
+# COMMAND LINE ARGUMENTS
+# =========================================================
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the pipeline."""
+
+    parser = argparse.ArgumentParser(
+        description="Run the Online Retail data pipeline."
+    )
+
+    parser.add_argument(
+        "--stage",
+        choices=[
+            "all",
+            "ingestion",
+            "transformation",
+            "warehouse",
+            "report",
+        ],
+        default="all",
+        help="Pipeline stage to execute. Default: all.",
+    )
+
+    return parser.parse_args()
 
 # =========================================================
 # LOGGER
@@ -382,6 +410,7 @@ def display_scd2_summary() -> None:
 # =========================================================
 def main() -> None:
     """Orchestrate the full pipeline in sequence."""
+    args = parse_args()
     setup_logger()
 
     print("\n" + "=" * 70)
@@ -399,10 +428,11 @@ def main() -> None:
 
     try:
         for step in PIPELINE_STEPS:
-            run_step(
-                step_name=step["name"],
-                script_path=step["script"],
-            )
+            if args.stage != "all" and step["stage"] != args.stage:
+                continue
+
+            run_step(step["name"], step["script"])
+
 
             # Display and validate SCD2 immediately after
             # building the Data Warehouse.
