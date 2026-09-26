@@ -113,7 +113,7 @@ def setup_logger() -> None:
 # =========================================================
 # PIPELINE EXECUTION
 # =========================================================
-def run_step(step_name: str, script_path: Path) -> None:
+def run_step(step_name: str,script_path: Path,mode: str,) -> None:
     """Run one pipeline step using a Python subprocess."""
     if not script_path.exists():
         raise FileNotFoundError(
@@ -130,8 +130,21 @@ def run_step(step_name: str, script_path: Path) -> None:
 
     start_time = time.perf_counter()
 
+    command = [
+        sys.executable,
+        str(script_path),
+    ]
+
+    if script_path.name == "build_datawarehouse.py":
+        command.extend(
+            [
+                "--mode",
+                mode,
+            ]
+        )
+
     result = subprocess.run(
-        [sys.executable, str(script_path)],
+        command,
         cwd=str(BASE_DIR),
         capture_output=True,
         text=True,
@@ -462,7 +475,11 @@ def main() -> None:
                 )
                 continue
 
-            run_step(step["name"], step["script"])
+            run_step(
+                step["name"],
+                step["script"],
+                args.mode,
+            )
 
             # Display and validate SCD2 immediately after
             # building the Data Warehouse.
@@ -478,7 +495,6 @@ def main() -> None:
             total_duration,
         )
 
-        print("\n" + "=" * 70)
         if args.dry_run:
             print("\n" + "=" * 70)
             print("ONLINE RETAIL PIPELINE DRY RUN COMPLETED")

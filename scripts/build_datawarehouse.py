@@ -1,6 +1,7 @@
 from pathlib import Path
 import logging
-
+import argparse
+import uuid
 import duckdb
 
 
@@ -23,6 +24,24 @@ REQUIRED_SCD2_COLUMNS = {
     "is_current",
 }
 
+# =========================================================
+# COMMAND LINE ARGUMENTS
+# =========================================================
+def parse_args() -> argparse.Namespace:
+    """Parse Data Warehouse execution arguments."""
+
+    parser = argparse.ArgumentParser(
+        description="Build the Online Retail Data Warehouse."
+    )
+
+    parser.add_argument(
+        "--mode",
+        choices=["full", "incremental"],
+        default="full",
+        help="Load mode. Default: full.",
+    )
+
+    return parser.parse_args()
 
 # =========================================================
 # LOGGER
@@ -56,6 +75,151 @@ def attach_source_database(con: duckdb.DuckDBPyConnection) -> None:
     logging.info("Attaching source database: %s", SOURCE_DB_PATH)
     con.execute(f"ATTACH '{SOURCE_DB_PATH}' AS source_db;")
 
+# =========================================================
+# PIPELINE RUN CONTROL
+# =========================================================
+def create_pipeline_control_table(
+    con: duckdb.DuckDBPyConnection,
+) -> None:
+    """Create the table used to track DW executions and watermarks."""
+
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS pipeline_run_control (
+            run_id VARCHAR PRIMARY KEY,
+            mode VARCHAR NOT NULL,
+            status VARCHAR NOT NULL,
+            watermark_start TIMESTAMP,
+            watermark_end TIMESTAMP,
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            finished_at TIMESTAMP,
+            error_message VARCHAR
+        );
+    """)
+def get_last_successful_watermark(
+    con: duckdb.DuckDBPyConnection,
+):
+    """Return the watermark from the most recent successful run."""
+
+    result = con.execute("""
+        SELECT watermark_end
+        FROM pipeline_run_control
+        WHERE status = 'SUCCESS'
+          AND watermark_end IS NOT NULL
+        ORDER BY finished_at DESC
+        LIMIT 1;
+    """).fetchone()
+
+    return result[0] if result else None
+
+def start_pipeline_run(
+    con: duckdb.DuckDBPyConnection,
+    run_id: str,
+    mode: str,
+    watermark_start,
+) -> None:
+    """Register the beginning of a DW execution."""
+
+    con.execute(
+        """
+        INSERT INTO pipeline_run_control (
+            run_id,
+            mode,
+            status,
+            watermark_start
+        )
+        VALUES (?, ?, 'RUNNING', ?);
+        """,
+        [run_id, mode, watermark_start],
+    )
+
+def create_sales_scope(
+    con: duckdb.DuckDBPyConnection,
+    mode: str,
+    watermark,
+) -> None:
+    """Create the source subset used by the current execution."""
+
+    if mode == "incremental" and watermark is not None:
+        logging.info(
+            "Incremental load using watermark: %s",
+            watermark,
+        )
+
+        con.execute(
+            """
+            CREATE OR REPLACE TEMP TABLE sales_staging_scope AS
+            SELECT *
+            FROM source_db.sales_staging
+            WHERE invoicedate > ?;
+            """,
+            [watermark],
+        )
+
+    else:
+        logging.info(
+            "Full source scan. Previous watermark: %s",
+            watermark,
+        )
+
+        con.execute("""
+            CREATE OR REPLACE TEMP TABLE sales_staging_scope AS
+            SELECT *
+            FROM source_db.sales_staging;
+ 
+        """)
+def get_scope_watermark(
+    con: duckdb.DuckDBPyConnection,
+    previous_watermark,
+):
+    """Return the maximum timestamp processed in the current run."""
+
+    result = con.execute("""
+        SELECT MAX(invoicedate)
+        FROM sales_staging_scope;
+    """).fetchone()[0]
+
+    if result is None:
+        return previous_watermark
+
+    return result
+
+def complete_pipeline_run(
+    con: duckdb.DuckDBPyConnection,
+    run_id: str,
+    watermark_end,
+) -> None:
+    """Mark the execution as successful and advance its watermark."""
+
+    con.execute(
+        """
+        UPDATE pipeline_run_control
+        SET
+            status = 'SUCCESS',
+            watermark_end = ?,
+            finished_at = CURRENT_TIMESTAMP
+        WHERE run_id = ?;
+        """,
+        [watermark_end, run_id],
+    )
+
+def fail_pipeline_run(
+            con: duckdb.DuckDBPyConnection,
+            run_id: str,
+            error: Exception,
+    ) -> None:
+        """Mark the execution as failed without advancing the watermark."""
+
+        con.execute(
+            """
+            UPDATE pipeline_run_control
+            SET
+                status = 'FAILED',
+                finished_at = CURRENT_TIMESTAMP,
+                error_message = ?
+            WHERE run_id = ?;
+            """,
+            [str(error), run_id],
+        )
 
 # =========================================================
 # SCHEMA
@@ -285,7 +449,7 @@ def load_dim_customer(con: duckdb.DuckDBPyConnection) -> None:
         SELECT source.customerid
         FROM (
             SELECT DISTINCT customerid
-            FROM source_db.sales_staging
+            FROM sales_staging_scope
             WHERE customerid IS NOT NULL
         ) AS source
         WHERE NOT EXISTS (
@@ -305,7 +469,7 @@ def load_dim_country(con: duckdb.DuckDBPyConnection) -> None:
         SELECT source.country
         FROM (
             SELECT DISTINCT country
-            FROM source_db.sales_staging
+            FROM sales_staging_scope
             WHERE country IS NOT NULL
         ) AS source
         WHERE NOT EXISTS (
@@ -325,7 +489,7 @@ def load_dim_invoice(con: duckdb.DuckDBPyConnection) -> None:
         SELECT source.invoiceno
         FROM (
             SELECT DISTINCT invoiceno
-            FROM source_db.sales_staging
+            FROM sales_staging_scope
             WHERE invoiceno IS NOT NULL
         ) AS source
         WHERE NOT EXISTS (
@@ -544,7 +708,7 @@ def load_fact_sales(con: duckdb.DuckDBPyConnection) -> None:
                         invoicedate
                     ORDER BY invoicedate
                 ) AS row_number
-            FROM source_db.sales_staging
+            FROM sales_staging_scope
         )
         SELECT
             time.date_key,
@@ -809,8 +973,18 @@ def build_data_warehouse(
 
 def main() -> None:
     """Execute the complete Data Warehouse workflow."""
+
+    args = parse_args()
+    run_id = str(uuid.uuid4())
+    run_registered = False
+
     setup_logger()
-    logging.info("Starting data warehouse pipeline")
+
+    logging.info(
+        "Starting Data Warehouse pipeline - mode=%s run_id=%s",
+        args.mode,
+        run_id,
+    )
 
     con = None
 
@@ -818,19 +992,76 @@ def main() -> None:
         con = connect_to_dw()
         attach_source_database(con)
 
+        # Create execution-control table.
+        create_pipeline_control_table(con)
+
+        # Read the watermark from the last successful execution.
+        watermark_start = get_last_successful_watermark(con)
+
+        # Register this execution as RUNNING.
+        start_pipeline_run(
+            con,
+            run_id,
+            args.mode,
+            watermark_start,
+        )
+
+        run_registered = True
+
+        # Create the dataset that this execution will process.
+        create_sales_scope(
+            con,
+            args.mode,
+            watermark_start,
+        )
+
+        # Build, load and validate the Data Warehouse.
         build_data_warehouse(con)
+
+        # Export validated DW tables for Power BI.
         export_powerbi_csv(con)
+
+        # Calculate the new watermark only after successful processing.
+        watermark_end = get_scope_watermark(
+            con,
+            watermark_start,
+        )
+
+        # Mark the execution as SUCCESS and advance the watermark.
+        complete_pipeline_run(
+            con,
+            run_id,
+            watermark_end,
+        )
+
+        logging.info(
+            "Watermark advanced from %s to %s",
+            watermark_start,
+            watermark_end,
+        )
 
         logging.info(
             "Data warehouse pipeline completed successfully"
         )
-    except Exception:
-        logging.exception("Data warehouse pipeline failed")
+
+    except Exception as error:
+        logging.exception(
+            "Data warehouse pipeline failed: %s",
+            error,
+        )
+
+        if con is not None and run_registered:
+            fail_pipeline_run(
+                con,
+                run_id,
+                error,
+            )
+
         raise
+
     finally:
         if con is not None:
             con.close()
-
 
 if __name__ == "__main__":
     main()

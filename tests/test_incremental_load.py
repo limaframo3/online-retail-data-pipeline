@@ -1,6 +1,8 @@
 import duckdb
-
-from scripts.build_datawarehouse import load_fact_sales
+from scripts.build_datawarehouse import (
+    create_sales_scope,
+    load_fact_sales,
+)
 
 
 def test_fact_sales_is_idempotent():
@@ -100,6 +102,20 @@ def test_fact_sales_is_idempotent():
         );
     """)
 
+    create_sales_scope(
+        con,
+        mode="full",
+        watermark=None,
+    )
+
+    create_sales_scope(
+        con,
+        mode="full",
+        watermark=None,
+    )
+
+    load_fact_sales(con)
+
     # First load
     load_fact_sales(con)
 
@@ -107,6 +123,13 @@ def test_fact_sales_is_idempotent():
         "SELECT COUNT(*) FROM fact_sales"
     ).fetchone()[0]
 
+    create_sales_scope(
+        con,
+        mode="full",
+        watermark=None,
+    )
+
+    load_fact_sales(con)
     # Same source is processed again
     load_fact_sales(con)
 
@@ -201,6 +224,7 @@ def test_fact_sales_inserts_new_transaction():
     """)
 
     # First transaction
+    # First transaction
     con.execute("""
         INSERT INTO source_db.sales_staging VALUES (
             '536365',
@@ -214,6 +238,12 @@ def test_fact_sales_inserts_new_transaction():
             15.30
         );
     """)
+
+    create_sales_scope(
+        con,
+        mode="full",
+        watermark=None,
+    )
 
     load_fact_sales(con)
 
@@ -236,6 +266,12 @@ def test_fact_sales_inserts_new_transaction():
         );
     """)
 
+    create_sales_scope(
+        con,
+        mode="full",
+        watermark=None,
+    )
+
     load_fact_sales(con)
 
     second_count = con.execute(
@@ -256,3 +292,66 @@ def test_fact_sales_inserts_new_transaction():
         ("536365",),
         ("536366",),
     ]
+
+def test_incremental_scope_filters_by_watermark():
+        con = duckdb.connect(":memory:")
+
+        con.execute("""
+            CREATE SCHEMA source_db;
+
+            CREATE TABLE source_db.sales_staging (
+                invoiceno VARCHAR,
+                stockcode VARCHAR,
+                description VARCHAR,
+                quantity INTEGER,
+                unitprice DOUBLE,
+                invoicedate TIMESTAMP,
+                customerid VARCHAR,
+                country VARCHAR,
+                total_venta DOUBLE
+            );
+        """)
+
+        con.execute("""
+            INSERT INTO source_db.sales_staging VALUES
+                (
+                    '536365',
+                    '85123A',
+                    'Old Transaction',
+                    6,
+                    2.55,
+                    '2010-12-01 08:26:00',
+                    '17850',
+                    'United Kingdom',
+                    15.30
+                ),
+                (
+                    '536366',
+                    '85123A',
+                    'New Transaction',
+                    2,
+                    2.55,
+                    '2010-12-01 09:00:00',
+                    '17850',
+                    'United Kingdom',
+                    5.10
+                );
+        """)
+
+        create_sales_scope(
+            con,
+            mode="incremental",
+            watermark="2010-12-01 08:30:00",
+        )
+
+        rows = con.execute("""
+            SELECT invoiceno
+            FROM sales_staging_scope
+            ORDER BY invoiceno;
+        """).fetchall()
+
+        con.close()
+
+        assert rows == [
+            ("536366",),
+        ]
