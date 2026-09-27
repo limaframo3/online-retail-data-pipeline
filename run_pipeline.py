@@ -6,6 +6,7 @@ import sys
 import time
 import argparse
 import duckdb
+import os
 
 
 # =========================================================
@@ -27,13 +28,31 @@ def load_config() -> dict:
     with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
         return json.load(config_file)
 
+def get_env(
+    name: str,
+    default: str | None = None,
+    required: bool = False,
+) -> str | None:
+    """Read an environment variable with optional validation."""
+
+    value = os.getenv(name, default)
+
+    if required and not value:
+        raise RuntimeError(
+            f"Required environment variable is missing: {name}"
+        )
+
+    return value
 
 CONFIG = load_config()
 
 LOG_PATH = BASE_DIR / CONFIG["paths"]["log"]
 PIPELINE_VERSION = CONFIG["pipeline"]["version"]
-ENVIRONMENT = CONFIG["pipeline"]["environment"]
 
+ENVIRONMENT = get_env(
+    "ONLINE_RETAIL_ENV",
+    CONFIG["pipeline"]["environment"],
+)
 
 PIPELINE_STEPS = [
     {
@@ -57,6 +76,7 @@ PIPELINE_STEPS = [
         "script": SCRIPTS_DIR / "generate_report.py",
     },
 ]
+
 
 # =========================================================
 # COMMAND LINE ARGUMENTS
@@ -113,7 +133,11 @@ def setup_logger() -> None:
 # =========================================================
 # PIPELINE EXECUTION
 # =========================================================
-def run_step(step_name: str,script_path: Path,mode: str,) -> None:
+def run_step(
+            step_name: str,
+            script_path: Path,
+            mode: str,
+    ) -> None:
     """Run one pipeline step using a Python subprocess."""
     if not script_path.exists():
         raise FileNotFoundError(
@@ -430,6 +454,16 @@ def display_scd2_summary() -> None:
     finally:
         connection.close()
 
+def mask_secret(secret: str | None) -> str:
+    """Mask a secret before writing it to logs."""
+
+    if not secret:
+        return ""
+
+    if len(secret) <= 4:
+        return "*" * len(secret)
+
+    return secret[:2] + "*" * (len(secret) - 4) + secret[-2:]
 
 # =========================================================
 # MAIN
