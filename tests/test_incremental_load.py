@@ -1,7 +1,12 @@
 import duckdb
 from scripts.build_datawarehouse import (
+    complete_pipeline_run,
+    create_pipeline_control_table,
     create_sales_scope,
+    fail_pipeline_run,
+    get_last_successful_watermark,
     load_fact_sales,
+    start_pipeline_run,
 )
 
 
@@ -355,3 +360,68 @@ def test_incremental_scope_filters_by_watermark():
         assert rows == [
             ("536366",),
         ]
+
+def test_failed_run_does_not_advance_watermark():
+    con = duckdb.connect(":memory:")
+
+    create_pipeline_control_table(con)
+
+    previous_watermark = "2011-12-10 09:01:00"
+
+    # Simulate a previous successful execution.
+    start_pipeline_run(
+        con,
+        run_id="successful-run",
+        mode="incremental",
+        watermark_start=None,
+    )
+
+    complete_pipeline_run(
+        con,
+        run_id="successful-run",
+        watermark_end=previous_watermark,
+    )
+
+    watermark_before_failure = get_last_successful_watermark(con)
+
+    assert str(watermark_before_failure) == previous_watermark
+
+    # Start a new execution.
+    start_pipeline_run(
+        con,
+        run_id="failed-run",
+        mode="incremental",
+        watermark_start=watermark_before_failure,
+    )
+
+    # Simulate an error during the pipeline.
+    simulated_error = RuntimeError(
+        "Simulated pipeline failure"
+    )
+
+    fail_pipeline_run(
+        con,
+        run_id="failed-run",
+        error=simulated_error,
+    )
+
+    failed_run = con.execute("""
+        SELECT
+            status,
+            watermark_start,
+            watermark_end,
+            error_message
+        FROM pipeline_run_control
+        WHERE run_id = 'failed-run';
+    """).fetchone()
+
+    watermark_after_failure = get_last_successful_watermark(con)
+
+    con.close()
+
+    assert failed_run[0] == "FAILED"
+    assert failed_run[1] == watermark_before_failure
+    assert failed_run[2] is None
+    assert failed_run[3] == "Simulated pipeline failure"
+
+    assert watermark_after_failure == watermark_before_failure
