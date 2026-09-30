@@ -3,11 +3,30 @@ import logging
 import pandas as pd
 import pycountry
 import json
+import argparse
+import duckdb
+
 
 try:
- from .data_quality import REQUIRED_COLUMNS
+    from .data_quality import (
+            CANCELLATION_INVOICE_PREFIX,
+            DQ_CRITICAL_RULES,
+            MIN_VALID_QUANTITY,
+            MIN_VALID_UNITPRICE,
+            REQUIRED_COLUMNS,
+            evaluate_rule,
+            has_critical_failure,
+        )
 except ImportError:
-    from data_quality import REQUIRED_COLUMNS
+    from data_quality import (
+            CANCELLATION_INVOICE_PREFIX,
+            DQ_CRITICAL_RULES,
+            MIN_VALID_QUANTITY,
+            MIN_VALID_UNITPRICE,
+            REQUIRED_COLUMNS,
+            evaluate_rule,
+            has_critical_failure,
+        )
 
 
 # =========================================================
@@ -15,6 +34,7 @@ except ImportError:
 # =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+DW_DB_PATH = BASE_DIR / "db" / "DW_Online_Retail.db"
 CONFIG_PATH = BASE_DIR / "config.json"
 
 with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
@@ -252,6 +272,208 @@ def reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     return df[existing_cols + remaining_cols]
 
+def calculate_data_quality_metrics(
+    df: pd.DataFrame,
+) -> list[dict]:
+    """Calculate production-style data quality metrics."""
+
+    total_rows = len(df)
+
+    quantity = pd.to_numeric(
+        df["quantity"],
+        errors="coerce",
+    )
+
+    unitprice = pd.to_numeric(
+        df["unitprice"],
+        errors="coerce",
+    )
+
+    invoicedate = pd.to_datetime(
+        df["invoicedate"],
+        errors="coerce",
+    )
+
+    invoiceno = df["invoiceno"].astype("string")
+
+    cancellation_mask = invoiceno.str.startswith(
+        CANCELLATION_INVOICE_PREFIX,
+        na=False,
+    )
+
+    quantity_failures = (
+        quantity.isna()
+        | (
+            (quantity < MIN_VALID_QUANTITY)
+            & ~cancellation_mask
+        )
+    ).sum()
+
+    unitprice_failures = (
+        unitprice.isna()
+        | (unitprice <= MIN_VALID_UNITPRICE)
+    ).sum()
+
+    def missing_text(column: str) -> int:
+        series = df[column].astype("string")
+
+        return int(
+            (
+                series.isna()
+                | series.str.strip().eq("")
+            ).sum()
+        )
+
+    metrics = [
+        evaluate_rule(
+            "quantity_positive",
+            int(quantity_failures),
+            total_rows,
+        ),
+        evaluate_rule(
+            "unitprice_positive",
+            int(unitprice_failures),
+            total_rows,
+        ),
+        evaluate_rule(
+            "invoicedate_not_null",
+            int(invoicedate.isna().sum()),
+            total_rows,
+        ),
+        evaluate_rule(
+            "invoiceno_not_null",
+            missing_text("invoiceno"),
+            total_rows,
+        ),
+        evaluate_rule(
+            "stockcode_not_null",
+            missing_text("stockcode"),
+            total_rows,
+        ),
+        evaluate_rule(
+            "country_not_null",
+            missing_text("country"),
+            total_rows,
+        ),
+        evaluate_rule(
+            "customerid_not_null",
+            missing_text("customerid"),
+            total_rows,
+        ),
+    ]
+
+    return metrics
+
+
+def log_quality_metrics(metrics: list[dict]) -> None:
+    """Write data quality rule metrics to the pipeline log."""
+
+    logging.info("Data Quality rule metrics:")
+
+    for metric in metrics:
+        logging.info(
+            "Rule=%s | Failed rows=%s | "
+            "Failure percentage=%.4f%% | "
+            "Threshold=%.4f%% | Status=%s",
+            metric["rule"],
+            metric["failed_rows"],
+            metric["failure_percentage"],
+            metric["threshold_percentage"],
+            metric["status"],
+        )
+
+
+def save_quality_metrics(
+    metrics: list[dict],
+    run_id: str | None,
+) -> None:
+    """Persist data quality metrics in the warehouse database."""
+
+    if not run_id:
+        logging.warning(
+            "Data quality metrics were not persisted because run_id is missing."
+        )
+        return
+
+    con = duckdb.connect(str(DW_DB_PATH))
+
+    try:
+        con.execute("""
+            
+        CREATE TABLE IF NOT EXISTS data_quality_metrics (
+        run_id VARCHAR NOT NULL,
+        rule VARCHAR NOT NULL,
+        failed_rows BIGINT NOT NULL,
+        failure_percentage DOUBLE NOT NULL,
+        threshold_percentage DOUBLE NOT NULL,
+        status VARCHAR NOT NULL,
+        executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (run_id, rule)
+        );
+        """)
+
+
+        records = [
+            (
+                run_id,
+                metric["rule"],
+                int(metric["failed_rows"]),
+                float(metric["failure_percentage"]),
+                float(metric["threshold_percentage"]),
+                metric["status"],
+            )
+            for metric in metrics
+        ]
+
+        con.execute(
+            """
+            DELETE FROM data_quality_metrics
+            WHERE run_id = ?;
+            """,
+            [run_id],
+        )
+
+        con.executemany(
+            """
+            INSERT INTO data_quality_metrics (
+                run_id,
+                rule,
+                failed_rows,
+                failure_percentage,
+                threshold_percentage,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?);
+            """,
+            records,
+        )
+
+        logging.info(
+            "Persisted %s data quality metrics for run_id=%s",
+            len(records),
+            run_id,
+        )
+
+    finally:
+        con.close()
+
+def enforce_quality_gate(metrics: list[dict]) -> None:
+    """Stop the pipeline when a critical data quality rule fails."""
+
+    if not has_critical_failure(metrics):
+        return
+
+    failed_critical_rules = [
+        metric["rule"]
+        for metric in metrics
+        if metric["status"] == "FAIL"
+        and metric["rule"] in DQ_CRITICAL_RULES
+    ]
+
+    raise RuntimeError(
+        "Critical data quality rules failed: "
+        + ", ".join(failed_critical_rules)
+    )
 
 # =========================================================
 # VALIDATION
@@ -310,19 +532,63 @@ def save_quarantine(df: pd.DataFrame, output_path: Path) -> None:
     logging.info(f"Quarantine Parquet saved to: {output_path}")
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for ingestion."""
+
+    parser = argparse.ArgumentParser(
+        description="Run Online Retail ingestion."
+    )
+
+    parser.add_argument(
+        "--run-id",
+        required=False,
+        default=None,
+        help="Global pipeline execution identifier.",
+    )
+
+    return parser.parse_args()
+
 # =========================================================
 # MAIN
 # =========================================================
 def main() -> None:
     """Execute ingestion and cleaning workflow."""
+
+    args = parse_args()
     setup_logger()
-    logging.info("Starting ingestion pipeline")
+    logging.info(
+        "Starting ingestion pipeline - run_id=%s",
+        args.run_id,
+    )
 
     try:
         df = load_data(EXCEL_PATH, RAW_PARQUET_PATH)
         df = standardize_column_names(df)
         validate_schema(df)
         df = trim_text_values(df)
+
+        quality_metrics = calculate_data_quality_metrics(df)
+        log_quality_metrics(quality_metrics)
+
+        save_quality_metrics(
+            quality_metrics,
+            args.run_id,
+        )
+
+        enforce_quality_gate(quality_metrics)
+
+        if has_critical_failure(quality_metrics):
+            failed_critical_rules = [
+                metric["rule"]
+                for metric in quality_metrics
+                if metric["status"] == "FAIL"
+            ]
+
+            raise RuntimeError(
+                "Critical data quality rules failed: "
+                + ", ".join(failed_critical_rules)
+            )
+
         df = normalize_text_columns(df)
         df = standardize_country(df)
         df = convert_data_types(df)

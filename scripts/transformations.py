@@ -1,6 +1,7 @@
 from pathlib import Path
 import duckdb
 import logging
+import argparse
 
 try:
  from .data_quality import (
@@ -195,14 +196,36 @@ def export_data(con):
     (FORMAT PARQUET, COMPRESSION ZSTD);
     """)
 
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+
+    parser = argparse.ArgumentParser(
+        description="Run Online Retail transformations."
+    )
+
+    parser.add_argument(
+        "--run-id",
+        required=False,
+        default=None,
+        help="Global pipeline execution identifier.",
+    )
+
+    return parser.parse_args()
+
 
 # =========================================================
 # MAIN
 # =========================================================
 def main():
     """Execute DuckDB transformation workflow."""
+
+    args = parse_args()
+
     setup_logger()
-    logging.info("Starting transformation pipeline")
+    logging.info(
+        "Starting transformations - run_id=%s",
+        args.run_id,
+    )
 
     con = None
 

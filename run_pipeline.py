@@ -7,6 +7,7 @@ import time
 import argparse
 import duckdb
 import os
+import uuid
 
 
 # =========================================================
@@ -134,10 +135,11 @@ def setup_logger() -> None:
 # PIPELINE EXECUTION
 # =========================================================
 def run_step(
-            step_name: str,
-            script_path: Path,
-            mode: str,
-    ) -> None:
+    step_name: str,
+    script_path: Path,
+    mode: str,
+    run_id: str,
+) -> None:
     """Run one pipeline step using a Python subprocess."""
     if not script_path.exists():
         raise FileNotFoundError(
@@ -158,6 +160,13 @@ def run_step(
         sys.executable,
         str(script_path),
     ]
+
+    command.extend(
+        [
+            "--run-id",
+            run_id,
+        ]
+    )
 
     if script_path.name == "build_datawarehouse.py":
         command.extend(
@@ -472,6 +481,9 @@ def main() -> None:
     """Orchestrate the full pipeline in sequence."""
     args = parse_args()
     setup_logger()
+    run_id = str(uuid.uuid4())
+    print(f"Run ID:      {run_id}")
+    logging.info("Run ID: %s", run_id)
 
     print("\n" + "=" * 70)
     print("ONLINE RETAIL DATA PIPELINE")
@@ -513,6 +525,7 @@ def main() -> None:
                 step["name"],
                 step["script"],
                 args.mode,
+                run_id,
             )
 
             # Display and validate SCD2 immediately after

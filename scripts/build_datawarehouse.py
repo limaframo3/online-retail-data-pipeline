@@ -41,6 +41,13 @@ def parse_args() -> argparse.Namespace:
         help="Load mode. Default: full.",
     )
 
+    parser.add_argument(
+        "--run-id",
+        required=False,
+        default=None,
+        help="Global pipeline execution identifier.",
+    )
+
     return parser.parse_args()
 
 # =========================================================
@@ -975,7 +982,11 @@ def main() -> None:
     """Execute the complete Data Warehouse workflow."""
 
     args = parse_args()
-    run_id = str(uuid.uuid4())
+    run_id = (
+        args.run_id
+        if args.run_id
+        else str(uuid.uuid4())
+    )
     run_registered = False
 
     setup_logger()

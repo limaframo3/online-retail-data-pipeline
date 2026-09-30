@@ -1,6 +1,8 @@
 from pathlib import Path
 from datetime import datetime
 import duckdb
+import argparse
+import logging
 
 
 # =========================================================
@@ -147,13 +149,33 @@ def generate_report() -> None:
 
     print(f"Report generated successfully: {REPORT_PATH}")
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate Online Retail pipeline report."
+    )
+
+    parser.add_argument(
+        "--run-id",
+        required=False,
+        default=None,
+        help="Global pipeline execution identifier.",
+    )
+
+    return parser.parse_args()
+
 
 # =========================================================
 # MAIN
 # =========================================================
 def main() -> None:
-    generate_report()
 
+    args = parse_args()
+
+    logging.info(
+        "Generating report - run_id=%s",
+        args.run_id,
+    )
+    generate_report()
 
 if __name__ == "__main__":
     main()
