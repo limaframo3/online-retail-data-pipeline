@@ -37,7 +37,7 @@ The solution follows a layered data engineering approach:
    * Creates staging tables (`sales_base`, `stg_time`, `sales_staging`)
    * Applies centralized data quality and business rules defined in `scripts/data_quality.py`
    * Filters invalid commercial transactions, including cancellations, non-positive quantities or prices, and excluded operational descriptions
-   * Prepares structured and validated data directly inside DuckDB for the Data Warehouse
+   * Prepares structured and validated data for the Data Warehouse
    * Uses a full-refresh staging strategy, appropriate for the current dataset size
 
 3. **Data Warehouse (Star Schema)**
@@ -63,7 +63,7 @@ The solution follows a layered data engineering approach:
 
 5. **Data Export (CSV for BI Consumption)**
    * Exports dimension and fact tables to CSV
-   * Generates datasets in output/powerbi/
+   * Generates datasets in `output/{environment}/powerbi/`
    * Enables plug-and-play integration with BI tools
    * Eliminates need for database configuration
 
@@ -81,7 +81,7 @@ The solution follows a layered data engineering approach:
     * Uses pipeline-generated datasets that can be refreshed in Power BI Desktop
 
 ## 📂 Project Structure
-```text
+```
 OnlineRetail/
 ├── scripts/
 │   ├── data_ingestion.py           # Ingestion, schema validation, cleaning, and quarantine
@@ -93,74 +93,78 @@ OnlineRetail/
 │   └── generate_report.py          # Generates the automated pipeline report
 │
 ├── tests/
-│   ├── test_schema.py
-│   ├── test_quarantine.py
-│   ├── test_transformations.py
-│   ├── test_incremental_load.py
-│   └── test_data_quality_metrics.py
+│   ├── test_schema.py              # Schema contract tests
+│   ├── test_quarantine.py          # Technical quarantine tests
+│   ├── test_transformations.py     # Staging business-rule tests
+│   ├── test_incremental_load.py    # Incremental, watermark, and run-state tests
+│   └── test_data_quality_metrics.py # Data Quality metrics and quality-gate tests
 │
 ├── notebooks/
 │   └── eda_online_retail.ipynb
 │
 ├── dashboards/
-│   └── online_retail_dashboard.pbix
+│   └── online_retail_dashboard.pbix  # Power BI dashboard
 │
 ├── data/
 │   ├── raw/
-│   │   ├── Online Retail.xlsx
-│   │   └── Online_Retail.parquet
+│   │   ├── Online Retail.xlsx          # Original dataset
+│   │   └── Online_Retail.parquet       # Auto-generated raw Parquet dataset
 │   ├── dev/
 │   │   ├── processed/
-│   │   │   └── cleaned_sales.parquet
+│   │   │   └── cleaned_sales.parquet   # Validated and cleaned Parquet dataset
 │   │   └── quarantine/
-│   │       └── rejected_sales.parquet
+│   │       └── rejected_sales.parquet  # Created only when rejected records exist
 │   ├── test/
 │   │   ├── processed/
+│   │   │   └── cleaned_sales.parquet   # Test environment processed dataset
 │   │   └── quarantine/
-│   └── prod/
-│       ├── processed/
-│       └── quarantine/
-│
-├── db/
-│   ├── dev/
-│   │   ├── retail.db
-│   │   └── DW_Online_Retail.db
-│   ├── test/
-│   │   ├── retail.db
-│   │   └── DW_Online_Retail.db
-│   └── prod/
-│       ├── retail.db
-│       └── DW_Online_Retail.db
+│   │       └── rejected_sales.parquet  # Test environment rejected records
+│   ├── prod/
+│   │   ├── processed/
+│   │   │   └── cleaned_sales.parquet   # Production processed dataset
+│   │   └── quarantine/
+│   │       └── rejected_sales.parquet  # Production rejected records
+│   └── demo/
+│       └── scd2_product_changes.xlsx   # Demo reference workbook
 │
 ├── output/
 │   ├── dev/
-│   │   ├── powerbi/
-│   │   └── pipeline_report.txt
+│   │   ├── powerbi/                     # CSV exports for Power BI
+│   │   └── pipeline_report.txt          # Automated KPI and SCD2 report
 │   ├── test/
-│   │   ├── powerbi/
-│   │   └── pipeline_report.txt
+│   │   ├── powerbi/                     # Test environment Power BI exports
+│   │   └── pipeline_report.txt          # Test environment pipeline report
 │   └── prod/
-│       ├── powerbi/
-│       └── pipeline_report.txt
+│       ├── powerbi/                     # Production Power BI exports
+│       └── pipeline_report.txt          # Production pipeline report
+│
+├── db/
+│   ├── dev/
+│   │   ├── retail.db                    # Full-refresh staging database
+│   │   └── DW_Online_Retail.db          # DW + run control + persisted Data Quality metrics
+│   ├── test/
+│   │   ├── retail.db                    # Test environment staging database
+│   │   └── DW_Online_Retail.db          # Test environment Data Warehouse
+│   └── prod/
+│       ├── retail.db                    # Production staging database
+│       └── DW_Online_Retail.db          # Production Data Warehouse
 │
 ├── logs/
-│   ├── pipeline.log
-│   ├── scd2_demo.log
-│   └── scd2_verification.log
+│   ├── pipeline.log                 # Main pipeline execution log
+│   ├── scd2_demo.log                # Controlled demo changes log
+│   └── scd2_verification.log        # SCD2 verification log
 │
-├── config.json
-├── run_pipeline.py
-├── run_pipeline.sh
+├── config.json                      # Centralized environment-aware pipeline configuration
+├── run_pipeline.py                  # CLI orchestrator, global run_id, stage/mode/dry-run
+├── run_pipeline.sh                  # Bash execution helper
 ├── requirements.txt
 ├── README.md
 └── .gitignore
 ```
 
-> `data/{environment}/`, `db/{environment}/`, and `output/{environment}/` are runtime-generated and excluded from Git.
-
 ## 🔄 Pipeline Flow
 
-```text
+```
 data/raw/Online Retail.xlsx
         ↓
 data/raw/Online_Retail.parquet
@@ -169,27 +173,27 @@ Schema Contract Validation
         ↓
 Cleaning & Type Conversion
         ↓
- ┌──────────────────────────────────┬──────────────────────────────────┐
- ↓                                  ↓
-Valid Records                  Invalid Technical Records
- ↓                                  ↓
-data/{environment}/processed/   data/{environment}/quarantine/
-cleaned_sales.parquet           rejected_sales.parquet
-        ↓
+ ┌──────────────────────────────────────┬──────────────────────────────────────┐
+ ↓                                      ↓
+Valid Records                      Invalid Technical Records
+ ↓                                      ↓
+data/{environment}/processed/       data/{environment}/quarantine/
+cleaned_sales.parquet               rejected_sales.parquet
+ ↓
 db/{environment}/retail.db
 Staging Layer (Full Refresh)
-        ↓
+ ↓
 sales_raw → sales_base → stg_time → sales_staging
-        ↓
+ ↓
 Global run_id + Data Quality Gate
-        ↓
+ ↓
 data_quality_metrics (DuckDB)
-        ↓
+ ↓
 db/{environment}/DW_Online_Retail.db
 Data Warehouse (Full / Watermark Incremental / Idempotent)
-        ↓
+ ↓
 pipeline_run_control (run status + watermark)
-        ↓
+ ↓
  ┌─────────────────────┬──────────────────────────┐
  ↓                     ↓
 Standard Dimensions    dim_product (SCD Type 2)
@@ -198,11 +202,12 @@ Standard Dimensions    dim_product (SCD Type 2)
             ↓
          fact_sales
             ↓
- ┌──────────────────────────────┬────────────────────────────────────┐
- ↓                              ↓
-output/{environment}/powerbi/   output/{environment}/pipeline_report.txt
-            ↓
-      Power BI Dashboard
+ ┌───────────────────────────────────┬──────────────────────────────────────────┐
+ ↓                                   ↓
+output/{environment}/powerbi/*.csv   output/{environment}/pipeline_report.txt
+ ↓
+Power BI Dashboard
+
 ```
 
 ## ⚙️ Technologies Used
@@ -240,7 +245,7 @@ A virtual environment (`.venv`) is recommended to ensure dependency isolation an
 
 ## ⚙️ Pipeline Configuration
 
-The pipeline uses a centralized `config.json` file to manage shared source paths and environment-specific runtime settings.
+The pipeline uses a centralized `config.json` file to manage shared source paths, environment-specific databases, outputs, log levels, and execution settings.
 
 ```json
 {
@@ -285,11 +290,11 @@ The pipeline uses a centralized `config.json` file to manage shared source paths
 }
 ```
 
-The raw source layer is shared across environments, while processed data, quarantine data, staging databases, Data Warehouses, BI exports, and reports are isolated by environment.
+All paths are relative to the project root, allowing the pipeline to run consistently across different environments.
 
-All configured paths are relative to the project root, allowing the pipeline to run consistently across different environments.
+The raw source layer is shared across environments. Processed data, quarantine data, staging databases, Data Warehouses, Power BI exports, and automated reports are isolated by environment.
 
-The default environment is `dev`. It can be overridden without modifying `config.json` by setting `ONLINE_RETAIL_ENV`:
+The configured environment can be overridden without modifying `config.json` by setting `ONLINE_RETAIL_ENV`:
 
 ```bash
 export ONLINE_RETAIL_ENV=test
@@ -297,7 +302,9 @@ python run_pipeline.py --dry-run
 unset ONLINE_RETAIL_ENV
 ```
 
-The configuration is loaded automatically by the pipeline orchestrator and supporting scripts. Environment-specific runtime artifacts are generated under their corresponding `dev`, `test`, or `prod` folders and excluded from Git.
+The configuration is loaded automatically by the pipeline orchestrator and supporting scripts where applicable. Environment-variable helpers are used so deployment-specific values can be kept outside the codebase.
+
+Runtime-generated artifacts under `data/dev|test|prod`, `db/dev|test|prod`, and `output/dev|test|prod` are excluded from Git.
 
 ## 📊 Data Warehouse Model
 
@@ -607,7 +614,7 @@ data_quality_metrics      # Rule-level quality metrics linked by run_id
 
 ✔️ **Power BI ready datasets**
 ```
-output/powerbi/
+output/{environment}/powerbi/
 ├── dim_tiempo.csv
 ├── dim_customer.csv
 ├── dim_product.csv
@@ -618,7 +625,7 @@ output/powerbi/
 
 ✔️ **Automated Pipeline Report**
 ```
-output/pipeline_report.txt
+output/{environment}/pipeline_report.txt
 ```
 The report is automatically generated as the final step of the pipeline and provides a summary of business KPIs and execution results.
 
@@ -707,7 +714,7 @@ Power BI Desktop is not natively available for macOS. The dashboard file is ther
 
 The dashboard uses:
 ```
-output/powerbi/
+output/{environment}/powerbi/
 ```
 ## ▶️ How to open the dashboard
 
@@ -723,7 +730,7 @@ dashboards/online_retail_dashboard.pbix
 
 3. Point the data source to:
 ```
-output/powerbi/
+output/{environment}/powerbi/
 ```
 
 4. Click **Refresh** to load the datasets generated by the pipeline.
@@ -789,7 +796,7 @@ notebooks/eda_online_retail.ipynb
 * Physical Parquet partitioning was evaluated but intentionally not implemented because the current datasets are small; partitioning can be introduced as a scalability improvement when data volume increases
 * The pipeline is designed to be reproducible using relative paths
 * The raw source layer is shared across environments, while processed data, quarantine data, staging databases, Data Warehouses, BI exports, and reports are isolated by environment
-* The staging dataset is stored directly in the environment-specific DuckDB database; the redundant `sales_staging.parquet` export was intentionally removed
+* The staging dataset is stored directly in the environment-specific DuckDB staging database; the redundant `sales_staging.parquet` export was intentionally removed
 * The virtual environment (venv/) is excluded via .gitignore
 * DuckDB used as lightweight analytical database
 * The staging layer uses a full-refresh strategy because of the current dataset size, while the Data Warehouse uses incremental and idempotent loading to prevent duplicate dimension members and sales transactions
