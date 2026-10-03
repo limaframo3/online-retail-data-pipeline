@@ -1,19 +1,62 @@
 from pathlib import Path
-import logging
 import argparse
+import json
+import logging
+import os
 import uuid
+
 import duckdb
 
 
 # =========================================================
 # CONFIGURATION
 # =========================================================
-BASE_DIR = Path(__file__).resolve().parent.parent
 
-SOURCE_DB_PATH = BASE_DIR / "db" / "retail.db"
-DW_DB_PATH = BASE_DIR / "db" / "DW_Online_Retail.db"
-LOG_PATH = BASE_DIR / "logs" / "pipeline.log"
-DASHBOARD_OUTPUT_DIR = BASE_DIR / "output" / "powerbi"
+BASE_DIR = Path(__file__).resolve().parent.parent
+CONFIG_PATH = BASE_DIR / "config.json"
+
+
+def load_config() -> dict:
+    with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
+        return json.load(config_file)
+
+def get_environment_config(
+    config: dict,
+    environment: str,
+) -> dict:
+    environments = config.get("environments", {})
+
+    if environment not in environments:
+        raise RuntimeError(
+            f"Invalid environment: {environment}"
+        )
+
+    return environments[environment]
+
+CONFIG = load_config()
+
+ENVIRONMENT = os.getenv(
+    "ONLINE_RETAIL_ENV",
+    CONFIG["pipeline"]["environment"],
+)
+
+ENV_CONFIG = get_environment_config(
+    CONFIG,
+    ENVIRONMENT,
+)
+
+SOURCE_DB_PATH = (
+    BASE_DIR
+    / ENV_CONFIG["staging_database"]
+)
+DW_DB_PATH = BASE_DIR / ENV_CONFIG["database"]
+DASHBOARD_OUTPUT_DIR = BASE_DIR / ENV_CONFIG["powerbi_output"]
+LOG_LEVEL = ENV_CONFIG["log_level"]
+LOG_PATH = BASE_DIR / CONFIG["paths"]["log"]
+
+# =========================================================
+# SCD2 CONFIGURATION
+# =========================================================
 
 REQUIRED_SCD2_COLUMNS = {
     "product_key",
@@ -27,6 +70,7 @@ REQUIRED_SCD2_COLUMNS = {
 # =========================================================
 # COMMAND LINE ARGUMENTS
 # =========================================================
+
 def parse_args() -> argparse.Namespace:
     """Parse Data Warehouse execution arguments."""
 
@@ -53,24 +97,43 @@ def parse_args() -> argparse.Namespace:
 # =========================================================
 # LOGGER
 # =========================================================
+
 def setup_logger() -> None:
     """Configure logging for the data warehouse process."""
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DW_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    LOG_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    DW_DB_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
-    logging.basicConfig(
-        filename=str(LOG_PATH),
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+    log_level = getattr(
+        logging,
+        LOG_LEVEL.upper(),
+        logging.INFO,
     )
 
+    logging.basicConfig(
+        filename=str(LOG_PATH),
+        level=log_level,
+        format=(
+            "%(asctime)s - "
+            "%(levelname)s - "
+            "%(message)s"
+        ),
+    )
 
 # =========================================================
 # CONNECTION
 # =========================================================
+
 def connect_to_dw() -> duckdb.DuckDBPyConnection:
     """Create a connection to the target data warehouse."""
     logging.info("Connecting to target DW database: %s", DW_DB_PATH)
@@ -85,6 +148,7 @@ def attach_source_database(con: duckdb.DuckDBPyConnection) -> None:
 # =========================================================
 # PIPELINE RUN CONTROL
 # =========================================================
+
 def create_pipeline_control_table(
     con: duckdb.DuckDBPyConnection,
 ) -> None:
@@ -210,27 +274,28 @@ def complete_pipeline_run(
     )
 
 def fail_pipeline_run(
-            con: duckdb.DuckDBPyConnection,
-            run_id: str,
-            error: Exception,
-    ) -> None:
-        """Mark the execution as failed without advancing the watermark."""
+    con: duckdb.DuckDBPyConnection,
+    run_id: str,
+    error: Exception,
+) -> None:
+    """Mark the execution as failed without advancing the watermark."""
 
-        con.execute(
-            """
-            UPDATE pipeline_run_control
-            SET
-                status = 'FAILED',
-                finished_at = CURRENT_TIMESTAMP,
-                error_message = ?
-            WHERE run_id = ?;
-            """,
-            [str(error), run_id],
-        )
+    con.execute(
+        """
+        UPDATE pipeline_run_control
+        SET
+            status = 'FAILED',
+            finished_at = CURRENT_TIMESTAMP,
+            error_message = ?
+        WHERE run_id = ?;
+        """,
+        [str(error), run_id],
+    )
 
 # =========================================================
 # SCHEMA
 # =========================================================
+
 def validate_existing_product_schema(
     con: duckdb.DuckDBPyConnection,
 ) -> None:
@@ -396,6 +461,7 @@ def create_fact_table(con: duckdb.DuckDBPyConnection) -> None:
 # =========================================================
 # LOAD STANDARD DIMENSIONS
 # =========================================================
+
 def load_dim_time(con: duckdb.DuckDBPyConnection) -> None:
     """Load new dates from source_db.stg_time."""
     logging.info("Loading dim_tiempo")
@@ -510,6 +576,7 @@ def load_dim_invoice(con: duckdb.DuckDBPyConnection) -> None:
 # =========================================================
 # SCD TYPE 2 - DIM_PRODUCT
 # =========================================================
+
 def build_product_version_snapshot(
     con: duckdb.DuckDBPyConnection,
 ) -> None:
@@ -654,6 +721,7 @@ def load_dim_product_scd2(
 # =========================================================
 # LOAD FACT TABLE
 # =========================================================
+
 def refresh_fact_product_keys(
     con: duckdb.DuckDBPyConnection,
 ) -> None:
@@ -762,6 +830,7 @@ def load_fact_sales(con: duckdb.DuckDBPyConnection) -> None:
 # =========================================================
 # DATA QUALITY VALIDATIONS
 # =========================================================
+
 def validate_scd2_product(
     con: duckdb.DuckDBPyConnection,
 ) -> None:
@@ -912,6 +981,7 @@ def log_table_counts(con: duckdb.DuckDBPyConnection) -> None:
 # =========================================================
 # EXPORT TABLES FOR POWER BI
 # =========================================================
+
 def export_powerbi_csv(
     con: duckdb.DuckDBPyConnection,
 ) -> None:
@@ -947,6 +1017,7 @@ def export_powerbi_csv(
 # =========================================================
 # PIPELINE
 # =========================================================
+
 def build_data_warehouse(
     con: duckdb.DuckDBPyConnection,
 ) -> None:

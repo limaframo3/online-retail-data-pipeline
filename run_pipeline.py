@@ -1,33 +1,41 @@
 from pathlib import Path
+import argparse
 import json
 import logging
+import os
 import subprocess
 import sys
 import time
-import argparse
-import duckdb
-import os
 import uuid
 
+import duckdb
 
 # =========================================================
-# CONFIGURATION
+# BASE PATHS
 # =========================================================
+
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
 SCRIPTS_DIR = BASE_DIR / "scripts"
-DW_DB_PATH = BASE_DIR / "db" / "DW_Online_Retail.db"
 
+# =========================================================
+# CONFIGURATION HELPERS
+# =========================================================
 
 def load_config() -> dict:
     """Load pipeline configuration from config.json."""
+
     if not CONFIG_PATH.exists():
         raise FileNotFoundError(
             f"Configuration file not found: {CONFIG_PATH}"
         )
 
-    with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
+    with CONFIG_PATH.open(
+        "r",
+        encoding="utf-8",
+    ) as config_file:
         return json.load(config_file)
+
 
 def get_env(
     name: str,
@@ -45,15 +53,67 @@ def get_env(
 
     return value
 
+
+def get_environment_config(
+    config: dict,
+    environment: str,
+) -> dict:
+    """Return configuration for the selected environment."""
+
+    environments = config.get(
+        "environments",
+        {},
+    )
+
+    if environment not in environments:
+        raise RuntimeError(
+            f"Invalid environment: {environment}"
+        )
+
+    return environments[environment]
+
+
+def mask_secret(
+    secret: str | None,
+) -> str:
+    """Mask a secret before writing it to logs."""
+
+    if not secret:
+        return ""
+
+    if len(secret) <= 4:
+        return "*" * len(secret)
+
+    return (
+        secret[:2]
+        + "*" * (len(secret) - 4)
+        + secret[-2:]
+    )
+
+# =========================================================
+# ACTIVE CONFIGURATION
+# =========================================================
+
 CONFIG = load_config()
 
-LOG_PATH = BASE_DIR / CONFIG["paths"]["log"]
 PIPELINE_VERSION = CONFIG["pipeline"]["version"]
 
 ENVIRONMENT = get_env(
     "ONLINE_RETAIL_ENV",
     CONFIG["pipeline"]["environment"],
 )
+
+ENV_CONFIG = get_environment_config(
+    CONFIG,
+    ENVIRONMENT,
+)
+
+LOG_PATH = BASE_DIR / CONFIG["paths"]["log"]
+
+DW_DB_PATH = BASE_DIR / ENV_CONFIG["database"]
+
+LOG_LEVEL = ENV_CONFIG["log_level"]
+
 
 PIPELINE_STEPS = [
     {
@@ -120,14 +180,32 @@ def parse_args() -> argparse.Namespace:
 # =========================================================
 # LOGGER
 # =========================================================
+
 def setup_logger() -> None:
     """Configure pipeline logging."""
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    LOG_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    log_level = getattr(
+        logging,
+        LOG_LEVEL.upper(),
+        logging.INFO,
+    )
+
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
 
     logging.basicConfig(
         filename=str(LOG_PATH),
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+        level=log_level,
+        format=(
+            "%(asctime)s - "
+            "%(levelname)s - "
+            "%(message)s"
+        ),
     )
 
 
@@ -462,17 +540,6 @@ def display_scd2_summary() -> None:
 
     finally:
         connection.close()
-
-def mask_secret(secret: str | None) -> str:
-    """Mask a secret before writing it to logs."""
-
-    if not secret:
-        return ""
-
-    if len(secret) <= 4:
-        return "*" * len(secret)
-
-    return secret[:2] + "*" * (len(secret) - 4) + secret[-2:]
 
 # =========================================================
 # MAIN

@@ -2,14 +2,40 @@
   "paths": {
     "excel": "data/raw/Online Retail.xlsx",
     "raw_parquet": "data/raw/Online_Retail.parquet",
-    "processed_parquet": "data/processed/cleaned_sales.parquet",
-    "quarantine_parquet": "data/quarantine/rejected_sales.parquet",
-    "staging_parquet": "output/sales_staging.parquet",
-    "database": "db/DW_Online_Retail.db",
     "log": "logs/pipeline.log"
   },
   "pipeline": {
     "version": "1.0",
     "environment": "dev"
+  },
+
+  "environments": {
+  "dev": {
+    "database": "db/dev/DW_Online_Retail.db",
+    "staging_database": "db/dev/retail.db",
+    "processed_parquet": "data/dev/processed/cleaned_sales.parquet",
+    "quarantine_parquet": "data/dev/quarantine/rejected_sales.parquet",
+    "powerbi_output": "output/dev/powerbi",
+    "report_output": "output/dev",
+    "log_level": "INFO"
+  },
+  "test": {
+    "database": "db/test/DW_Online_Retail.db",
+    "staging_database": "db/test/retail.db",
+    "processed_parquet": "data/test/processed/cleaned_sales.parquet",
+    "quarantine_parquet": "data/test/quarantine/rejected_sales.parquet",
+    "powerbi_output": "output/test/powerbi",
+    "report_output": "output/test",
+    "log_level": "DEBUG"
+  },
+  "prod": {
+    "database": "db/prod/DW_Online_Retail.db",
+    "staging_database": "db/prod/retail.db",
+    "processed_parquet": "data/prod/processed/cleaned_sales.parquet",
+    "quarantine_parquet": "data/prod/quarantine/rejected_sales.parquet",
+    "powerbi_output": "output/prod/powerbi",
+    "report_output": "output/prod",
+    "log_level": "WARNING"
   }
+ }
 }

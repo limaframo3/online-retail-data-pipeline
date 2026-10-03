@@ -3,22 +3,87 @@ from datetime import datetime
 import duckdb
 import argparse
 import logging
+import json
+import os
 
 
 # =========================================================
 # CONFIGURATION
 # =========================================================
-BASE_DIR = Path(__file__).resolve().parent.parent
 
-DB_PATH = BASE_DIR / "db" / "DW_Online_Retail.db"
-LOG_PATH = BASE_DIR / "logs" / "pipeline.log"
-OUTPUT_DIR = BASE_DIR / "output"
-REPORT_PATH = OUTPUT_DIR / "pipeline_report.txt"
+BASE_DIR = Path(__file__).resolve().parent.parent
+CONFIG_PATH = BASE_DIR / "config.json"
+
+
+def load_config() -> dict:
+    """Load pipeline configuration from config.json."""
+
+    with CONFIG_PATH.open(
+        "r",
+        encoding="utf-8",
+    ) as config_file:
+        return json.load(config_file)
+
+
+def get_environment_config(
+    config: dict,
+    environment: str,
+) -> dict:
+    """Return configuration for the selected environment."""
+
+    environments = config.get(
+        "environments",
+        {},
+    )
+
+    if environment not in environments:
+        raise RuntimeError(
+            f"Invalid environment: {environment}"
+        )
+
+    return environments[environment]
+
+
+CONFIG = load_config()
+
+ENVIRONMENT = os.getenv(
+    "ONLINE_RETAIL_ENV",
+    CONFIG["pipeline"]["environment"],
+)
+
+ENV_CONFIG = get_environment_config(
+    CONFIG,
+    ENVIRONMENT,
+)
+
+DB_PATH = (
+    BASE_DIR
+    / ENV_CONFIG["database"]
+)
+
+LOG_PATH = (
+    BASE_DIR
+    / CONFIG["paths"]["log"]
+)
+
+OUTPUT_DIR = (
+    BASE_DIR
+    / ENV_CONFIG.get(
+        "report_output",
+        f"output/{ENVIRONMENT}",
+    )
+)
+
+REPORT_PATH = (
+    OUTPUT_DIR
+    / "pipeline_report.txt"
+)
 
 
 # =========================================================
 # REPORT GENERATION
 # =========================================================
+
 def generate_report() -> None:
     """Generate an automatic report for the Online Retail pipeline."""
 
@@ -148,6 +213,10 @@ def generate_report() -> None:
     REPORT_PATH.write_text("\n".join(report_lines), encoding="utf-8")
 
     print(f"Report generated successfully: {REPORT_PATH}")
+
+# =========================================================
+# COMMAND LINE ARGUMENTS
+# =========================================================
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
