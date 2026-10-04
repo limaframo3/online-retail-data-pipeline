@@ -1,10 +1,12 @@
 from pathlib import Path
+import argparse
+import json
 import logging
+import os
+
+import duckdb
 import pandas as pd
 import pycountry
-import json
-import argparse
-import duckdb
 
 
 try:
@@ -33,37 +35,114 @@ except ImportError:
 # CONFIGURATION
 # =========================================================
 
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-DW_DB_PATH = BASE_DIR / "db" / "DW_Online_Retail.db"
 CONFIG_PATH = BASE_DIR / "config.json"
 
-with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
-    CONFIG = json.load(config_file)
 
+def load_config() -> dict:
+    """Load pipeline configuration from config.json."""
+
+    with CONFIG_PATH.open(
+        "r",
+        encoding="utf-8",
+    ) as config_file:
+        return json.load(config_file)
+
+
+def get_environment_config(
+    config: dict,
+    environment: str,
+) -> dict:
+    """Return configuration for the selected environment."""
+
+    environments = config.get(
+        "environments",
+        {},
+    )
+
+    if environment not in environments:
+        raise RuntimeError(
+            f"Invalid environment: {environment}"
+        )
+
+    return environments[environment]
+
+
+CONFIG = load_config()
+
+ENVIRONMENT = os.getenv(
+    "ONLINE_RETAIL_ENV",
+    CONFIG["pipeline"]["environment"],
+)
+
+ENV_CONFIG = get_environment_config(
+    CONFIG,
+    ENVIRONMENT,
+)
 
 EXCEL_PATH = BASE_DIR / CONFIG["paths"]["excel"]
-RAW_PARQUET_PATH = BASE_DIR / CONFIG["paths"]["raw_parquet"]
-PROCESSED_PARQUET_PATH = BASE_DIR / CONFIG["paths"]["processed_parquet"]
-QUARANTINE_PARQUET_PATH = BASE_DIR / CONFIG["paths"]["quarantine_parquet"]
+
+RAW_PARQUET_PATH = (
+    BASE_DIR
+    / CONFIG["paths"]["raw_parquet"]
+)
+
+PROCESSED_PARQUET_PATH = (
+    BASE_DIR
+    / ENV_CONFIG["processed_parquet"]
+)
+
+QUARANTINE_PARQUET_PATH = (
+    BASE_DIR
+    / ENV_CONFIG["quarantine_parquet"]
+)
+
 LOG_PATH = BASE_DIR / CONFIG["paths"]["log"]
+
+DW_DB_PATH = (
+    BASE_DIR
+    / ENV_CONFIG["database"]
+)
+
+LOG_LEVEL = ENV_CONFIG["log_level"]
+
 
 # =========================================================
 # LOGGER
 # =========================================================
+
 def setup_logger() -> None:
     """Configure logging for the ingestion process."""
+
+
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     RAW_PARQUET_PATH.parent.mkdir(parents=True, exist_ok=True)
     PROCESSED_PARQUET_PATH.parent.mkdir(parents=True, exist_ok=True)
     QUARANTINE_PARQUET_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+    DW_DB_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
+    log_level = getattr(
+        logging,
+        LOG_LEVEL.upper(),
+        logging.INFO,
+    )
+
     logging.basicConfig(
         filename=str(LOG_PATH),
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
+        level=log_level,
+        format=(
+            "%(asctime)s - "
+            "%(levelname)s - "
+            "%(message)s"
+        ),
     )
 
 
@@ -531,6 +610,9 @@ def save_quarantine(df: pd.DataFrame, output_path: Path) -> None:
 
     logging.info(f"Quarantine Parquet saved to: {output_path}")
 
+# =========================================================
+# COMMAND LINE ARGUMENTS
+# =========================================================
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for ingestion."""
@@ -577,18 +659,6 @@ def main() -> None:
 
         enforce_quality_gate(quality_metrics)
 
-        if has_critical_failure(quality_metrics):
-            failed_critical_rules = [
-                metric["rule"]
-                for metric in quality_metrics
-                if metric["status"] == "FAIL"
-            ]
-
-            raise RuntimeError(
-                "Critical data quality rules failed: "
-                + ", ".join(failed_critical_rules)
-            )
-
         df = normalize_text_columns(df)
         df = standardize_country(df)
         df = convert_data_types(df)
@@ -605,7 +675,6 @@ def main() -> None:
     except Exception as e:
         logging.error(f"Ingestion pipeline failed: {e}")
         raise
-
 
 if __name__ == "__main__":
     main()

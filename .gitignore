@@ -79,3 +79,18 @@ Thumbs.db
 *.egg-info/
 dist/
 build/
+
+# Environment runtime data
+data/dev/
+data/test/
+data/prod/
+
+# Environment databases
+db/dev/
+db/test/
+db/prod/
+
+# Environment outputs
+output/dev/
+output/test/
+output/prod/

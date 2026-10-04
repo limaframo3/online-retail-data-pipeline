@@ -1,7 +1,10 @@
 from pathlib import Path
-import duckdb
-import logging
 import argparse
+import json
+import logging
+import os
+
+import duckdb
 
 try:
  from .data_quality import (
@@ -24,31 +27,106 @@ except ImportError:
 # =========================================================
 # CONFIGURATION
 # =========================================================
-BASE_DIR = Path(__file__).resolve().parent.parent
 
-INPUT_PATH = BASE_DIR / "data" / "processed" / "cleaned_sales.parquet"
-OUTPUT_PATH = BASE_DIR / "output" / "sales_staging.parquet"
-DB_PATH = BASE_DIR / "db" / "retail.db"
-LOG_PATH = BASE_DIR / "logs" / "pipeline.log"
+BASE_DIR = Path(__file__).resolve().parent.parent
+CONFIG_PATH = BASE_DIR / "config.json"
+
+
+def load_config() -> dict:
+    """Load pipeline configuration from config.json."""
+
+    with CONFIG_PATH.open(
+        "r",
+        encoding="utf-8",
+    ) as config_file:
+        return json.load(config_file)
+
+
+def get_environment_config(
+    config: dict,
+    environment: str,
+) -> dict:
+    """Return configuration for the selected environment."""
+
+    environments = config.get(
+        "environments",
+        {},
+    )
+
+    if environment not in environments:
+        raise RuntimeError(
+            f"Invalid environment: {environment}"
+        )
+
+    return environments[environment]
+
+
+CONFIG = load_config()
+
+ENVIRONMENT = os.getenv(
+    "ONLINE_RETAIL_ENV",
+    CONFIG["pipeline"]["environment"],
+)
+
+ENV_CONFIG = get_environment_config(
+    CONFIG,
+    ENVIRONMENT,
+)
+
+INPUT_PATH = (
+    BASE_DIR
+    / ENV_CONFIG["processed_parquet"]
+)
+
+DB_PATH = (
+    BASE_DIR
+    / ENV_CONFIG["staging_database"]
+)
+
+LOG_PATH = (
+    BASE_DIR
+    / CONFIG["paths"]["log"]
+)
+
+LOG_LEVEL = ENV_CONFIG["log_level"]
 
 
 # =========================================================
 # LOGGER
 # =========================================================
 
-def setup_logger():
+def setup_logger() -> None:
     """Configure logging for the transformation process."""
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    # Reset logging (important)
+    LOG_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    DB_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
+    log_level = getattr(
+        logging,
+        LOG_LEVEL.upper(),
+        logging.INFO,
+    )
+
     logging.basicConfig(
         filename=str(LOG_PATH),
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
+        level=log_level,
+        format=(
+            "%(asctime)s - "
+            "%(levelname)s - "
+            "%(message)s"
+        ),
     )
+
 
 # =========================================================
 # LOAD DATA
@@ -149,6 +227,7 @@ def build_description_exclusion_sql() -> str:
 # =========================================================
 # SALES STAGING
 # =========================================================
+
 def create_sales_staging(con):
     """Create sales staging table with valid commercial transactions only."""
     logging.info("Creating sales_staging")
@@ -177,24 +256,9 @@ def create_sales_staging(con):
         );
     """)
 
-
 # =========================================================
-# EXPORT
+# COMMAND LINE ARGUMENTS
 # =========================================================
-def export_data(con):
-    """Export staging table to Parquet."""
-    logging.info("Exporting sales_staging to Parquet")
-
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    con.execute(f"""
-    COPY (
-        SELECT *
-        FROM sales_staging
-    )
-    TO '{str(OUTPUT_PATH)}'
-    (FORMAT PARQUET, COMPRESSION ZSTD);
-    """)
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
@@ -216,6 +280,7 @@ def parse_args() -> argparse.Namespace:
 # =========================================================
 # MAIN
 # =========================================================
+
 def main():
     """Execute DuckDB transformation workflow."""
 
@@ -237,7 +302,6 @@ def main():
         validate_nulls(con)
         create_time_table(con)
         create_sales_staging(con)
-        export_data(con)
 
         logging.info("Pipeline completed successfully")
 
