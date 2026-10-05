@@ -815,8 +815,6 @@ notebooks/eda_online_retail.ipynb
 
 ## 💡 Design Decisions
 
-## 💡 Design Decisions
-
 * Raw dataset is not included to keep the repository lightweight
 * Parquet is used for raw and processed data layers to provide efficient columnar storage and consistent schema handling
 * Physical Parquet partitioning was evaluated but intentionally not implemented because the current datasets are small; partitioning can be introduced as a scalability improvement when data volume increases
