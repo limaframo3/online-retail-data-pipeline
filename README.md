@@ -375,6 +375,7 @@ The pipeline includes:
 * Logical product-key integrity validation for SCD Type 2
 * Product-version validity and continuity checks
 * Detection of null, orphan, duplicated, and temporally invalid keys
+
 ### Automated Tests
 
 The project uses `pytest` to validate critical pipeline behavior.
@@ -780,40 +781,6 @@ notebooks/eda_online_retail.ipynb
 * Centralized data quality and business rules
 * Production-style Data Quality metrics with configurable thresholds
 * Critical Data Quality gates with persisted failure evidence
-* Global run_id shared across pipeline stages
-* Stage-based CLI execution (`--stage`)
-* Full and incremental warehouse modes (`--mode`)
-* Dry-run execution preview (`--dry-run`)
-* Watermark-based incremental state management
-* Execution-history tracking in `pipeline_run_control`
-* Environment override through `ONLINE_RETAIL_ENV`
-* Environment-specific runtime isolation for `dev`, `test`, and `prod`
-* Separate processed/quarantine datasets, staging databases, Data Warehouses, BI exports, and reports per environment
-* Shared raw source layer with environment-specific downstream outputs
-* Runtime-generated environment artifacts excluded from Git
-* DuckDB-based transformations
-* Star schema data modeling
-* SCD Type 2 product-history management
-* Incremental and idempotent Data Warehouse loading
-* Automated testing with pytest
-* Automated CSV export for BI tools
-* Logging and execution tracking
-* Reproducible and modular design
-* Isolated environment with dependency management
-* Automated business reporting
-* Automated KPI and pipeline execution reporting
-
-## 💡 Design Decisions
-
-* Centralized JSON-based configuration
-* End-to-end data pipeline
-* Layered architecture (raw → processed → staging → DW → BI)
-* Parquet-based raw and processed data layers
-* Schema contract validation before downstream processing
-* Technical quarantine layer for rejected records
-* Centralized data quality and business rules
-* Production-style Data Quality metrics with configurable thresholds
-* Critical Data Quality gates with persisted failure evidence
 * Global `run_id` shared across pipeline stages
 * Stage-based CLI execution (`--stage`)
 * Full and incremental warehouse modes (`--mode`)
@@ -845,6 +812,42 @@ notebooks/eda_online_retail.ipynb
 * Isolated environment with dependency management
 * Automated business reporting
 * Automated KPI and pipeline execution reporting
+
+## 💡 Design Decisions
+
+## 💡 Design Decisions
+
+* Raw dataset is not included to keep the repository lightweight
+* Parquet is used for raw and processed data layers to provide efficient columnar storage and consistent schema handling
+* Physical Parquet partitioning was evaluated but intentionally not implemented because the current datasets are small; partitioning can be introduced as a scalability improvement when data volume increases
+* The pipeline is designed to be reproducible using relative paths
+* The raw source layer is shared across environments, while processed data, quarantine data, staging databases, Data Warehouses, BI exports, and reports are isolated by environment
+* The staging dataset is stored directly in the environment-specific DuckDB staging database; the redundant `sales_staging.parquet` export was intentionally removed
+* Runtime-generated artifacts for `dev`, `test`, and `prod` are excluded from Git to keep the repository clean
+* The virtual environment (`venv/`) is excluded via `.gitignore`
+* DuckDB is used as a lightweight analytical database
+* The staging layer uses a full-refresh strategy because of the current dataset size, while the Data Warehouse uses incremental and idempotent loading to prevent duplicate dimension members and sales transactions
+* SCD Type 2 is used to preserve changes in product descriptions
+* Product referential integrity is validated logically to support DuckDB SCD2 updates
+* CSV export layer is implemented for easy BI integration
+* Separation of concerns:
+  * Ingestion & Cleaning
+  * Transformation (Staging)
+  * Data Warehouse
+  * Analytics output
+* Technical validation and commercial business rules are separated: structurally invalid records are quarantined during ingestion, while business filtering is applied in the staging layer
+* Data Quality thresholds are configured separately from rule execution so tolerances can be adjusted without rewriting validation logic
+* Structural Data Quality rules can act as critical gates, while known source-data characteristics remain observable as non-critical metrics
+* Data Quality metrics are persisted before enforcing the quality gate so failed runs retain diagnostic evidence
+* A global `run_id` correlates ingestion quality metrics with warehouse execution metadata
+* Incremental state is stored as a successful-run watermark; failed runs never advance the watermark
+* Environment configuration is centralized in `config.json` while runtime environment selection is controlled through `ONLINE_RETAIL_ENV`
+* Automated tests validate environment selection, required configuration keys, invalid environment handling, and path isolation across `dev`, `test`, and `prod`
+* Data Quality integration tests use temporary DuckDB databases to avoid modifying project runtime data during test execution
+* Integration tests verify that critical Data Quality failures are persisted before the pipeline is stopped
+* Integration tests verify that non-critical Data Quality failures remain observable without unnecessarily stopping pipeline execution
+* Automated `pytest` tests protect critical schema, quarantine, transformation, Data Quality, environment configuration, watermark, and incremental-loading behavior
+* Automated reporting layer is implemented for KPI generation and pipeline monitoring
 
 ## 🎯 Author
 **Lina Marcela Franco Montes**
