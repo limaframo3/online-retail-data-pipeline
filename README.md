@@ -84,20 +84,23 @@ The solution follows a layered data engineering approach:
 ```
 OnlineRetail/
 ├── scripts/
-│   ├── data_ingestion.py           # Ingestion, schema validation, cleaning, and quarantine
-│   ├── data_quality.py             # Centralized data quality and business rules
-│   ├── transformations.py          # Builds staging tables in DuckDB
-│   ├── build_datawarehouse.py      # Builds the incremental DW and SCD2 product history
-│   ├── apply_scd2_demo_changes.py  # Applies controlled SCD2 source changes
-│   ├── verify_scd2_demo.py         # Verifies historical and current versions
-│   └── generate_report.py          # Generates the automated pipeline report
+│   ├── data_ingestion.py             # Ingestion, schema validation, cleaning, and quarantine
+│   ├── data_quality.py               # Centralized data quality and business rules
+│   ├── transformations.py            # Builds staging tables in DuckDB
+│   ├── build_datawarehouse.py        # Builds the incremental DW and SCD2 product history
+│   ├── apply_scd2_demo_changes.py    # Applies controlled SCD2 source changes
+│   ├── verify_scd2_demo.py           # Verifies historical and current versions
+│   └── generate_report.py            # Generates the automated pipeline report
 │
 ├── tests/
-│   ├── test_schema.py              # Schema contract tests
-│   ├── test_quarantine.py          # Technical quarantine tests
-│   ├── test_transformations.py     # Staging business-rule tests
-│   ├── test_incremental_load.py    # Incremental, watermark, and run-state tests
-│   └── test_data_quality_metrics.py # Data Quality metrics and quality-gate tests
+│   ├── integration/
+│   │   └── test_data_quality_flow.py     # Integration tests for Data Quality persistence and quality-gate flow
+│   ├── test_schema.py                    # Schema contract tests
+│   ├── test_quarantine.py                # Technical quarantine tests
+│   ├── test_transformations.py           # Staging business-rule tests
+│   ├── test_incremental_load.py          # Incremental, watermark, and run-state tests
+│   ├── test_data_quality_metrics.py      # Data Quality metrics and quality-gate tests
+│   └── test_environment_config.py        # Environment selection, isolation, and configuration tests
 │
 ├── notebooks/
 │   └── eda_online_retail.ipynb
@@ -107,56 +110,56 @@ OnlineRetail/
 │
 ├── data/
 │   ├── raw/
-│   │   ├── Online Retail.xlsx          # Original dataset
-│   │   └── Online_Retail.parquet       # Auto-generated raw Parquet dataset
+│   │   ├── Online Retail.xlsx            # Original dataset
+│   │   └── Online_Retail.parquet         # Auto-generated raw Parquet dataset
 │   ├── dev/
 │   │   ├── processed/
-│   │   │   └── cleaned_sales.parquet   # Validated and cleaned Parquet dataset
+│   │   │   └── cleaned_sales.parquet     # Validated and cleaned Parquet dataset
 │   │   └── quarantine/
-│   │       └── rejected_sales.parquet  # Created only when rejected records exist
+│   │       └── rejected_sales.parquet    # Created only when rejected records exist
 │   ├── test/
 │   │   ├── processed/
-│   │   │   └── cleaned_sales.parquet   # Test environment processed dataset
+│   │   │   └── cleaned_sales.parquet     # Test environment processed dataset
 │   │   └── quarantine/
-│   │       └── rejected_sales.parquet  # Test environment rejected records
+│   │       └── rejected_sales.parquet    # Test environment rejected records
 │   ├── prod/
 │   │   ├── processed/
-│   │   │   └── cleaned_sales.parquet   # Production processed dataset
+│   │   │   └── cleaned_sales.parquet     # Production processed dataset
 │   │   └── quarantine/
-│   │       └── rejected_sales.parquet  # Production rejected records
+│   │       └── rejected_sales.parquet    # Production rejected records
 │   └── demo/
-│       └── scd2_product_changes.xlsx   # Demo reference workbook
+│       └── scd2_product_changes.xlsx     # Demo reference workbook
 │
 ├── output/
 │   ├── dev/
-│   │   ├── powerbi/                     # CSV exports for Power BI
-│   │   └── pipeline_report.txt          # Automated KPI and SCD2 report
+│   │   ├── powerbi/                      # CSV exports for Power BI
+│   │   └── pipeline_report.txt           # Automated KPI and SCD2 report
 │   ├── test/
-│   │   ├── powerbi/                     # Test environment Power BI exports
-│   │   └── pipeline_report.txt          # Test environment pipeline report
+│   │   ├── powerbi/                      # Test environment Power BI exports
+│   │   └── pipeline_report.txt           # Test environment pipeline report
 │   └── prod/
-│       ├── powerbi/                     # Production Power BI exports
-│       └── pipeline_report.txt          # Production pipeline report
+│       ├── powerbi/                      # Production Power BI exports
+│       └── pipeline_report.txt           # Production pipeline report
 │
 ├── db/
 │   ├── dev/
-│   │   ├── retail.db                    # Full-refresh staging database
-│   │   └── DW_Online_Retail.db          # DW + run control + persisted Data Quality metrics
+│   │   ├── retail.db                     # Full-refresh staging database
+│   │   └── DW_Online_Retail.db           # DW + run control + persisted Data Quality metrics
 │   ├── test/
-│   │   ├── retail.db                    # Test environment staging database
-│   │   └── DW_Online_Retail.db          # Test environment Data Warehouse
+│   │   ├── retail.db                     # Test environment staging database
+│   │   └── DW_Online_Retail.db           # Test environment Data Warehouse
 │   └── prod/
-│       ├── retail.db                    # Production staging database
-│       └── DW_Online_Retail.db          # Production Data Warehouse
+│       ├── retail.db                     # Production staging database
+│       └── DW_Online_Retail.db           # Production Data Warehouse
 │
 ├── logs/
-│   ├── pipeline.log                 # Main pipeline execution log
-│   ├── scd2_demo.log                # Controlled demo changes log
-│   └── scd2_verification.log        # SCD2 verification log
+│   ├── pipeline.log                      # Main pipeline execution log
+│   ├── scd2_demo.log                     # Controlled demo changes log
+│   └── scd2_verification.log             # SCD2 validation results and detected failures
 │
-├── config.json                      # Centralized environment-aware pipeline configuration
-├── run_pipeline.py                  # CLI orchestrator, global run_id, stage/mode/dry-run
-├── run_pipeline.sh                  # Bash execution helper
+├── config.json                           # Centralized environment-aware pipeline configuration
+├── run_pipeline.py                       # CLI orchestrator, global run_id, stage/mode/dry-run
+├── run_pipeline.sh                       # Bash execution helper
 ├── requirements.txt
 ├── README.md
 └── .gitignore
@@ -372,6 +375,7 @@ The pipeline includes:
 * Logical product-key integrity validation for SCD Type 2
 * Product-version validity and continuity checks
 * Detection of null, orphan, duplicated, and temporally invalid keys
+
 ### Automated Tests
 
 The project uses `pytest` to validate critical pipeline behavior.
@@ -390,13 +394,24 @@ Current automated tests cover:
 * Quality-gate stop/continue behavior
 * Persistence of Data Quality failures before pipeline termination
 * Duplicate protection for persisted Data Quality metrics
+* Default `dev` environment selection
+* Environment override through `ONLINE_RETAIL_ENV`
+* Invalid environment detection
+* Validation of required environment configuration keys
+* Isolation of database, processed, quarantine, Power BI, and report paths across `dev`, `test`, and `prod`
+* Detection of incomplete environment configuration
+* Integration testing of the Data Quality flow
+* Persistence of Data Quality metrics in DuckDB during integration tests
+* Verification that critical Data Quality failures are persisted before stopping the pipeline
+* Verification that non-critical Data Quality failures are persisted without stopping the pipeline
+
 Run the complete test suite with:
 
 ```bash
 python -m pytest -v
 ```
 
-The current suite contains 18 automated tests covering schema validation, quarantine, staging transformations, incremental loading, watermark state, Data Quality metrics, persistence, and quality-gate behavior.
+The current suite contains 30 automated tests covering schema validation, quarantine, staging transformations, incremental loading, watermark state, Data Quality metrics, persistence, quality-gate behavior, environment configuration, environment isolation, and end-to-end Data Quality integration flow.
 
 ## 📈 Operational Observability
 
@@ -766,7 +781,7 @@ notebooks/eda_online_retail.ipynb
 * Centralized data quality and business rules
 * Production-style Data Quality metrics with configurable thresholds
 * Critical Data Quality gates with persisted failure evidence
-* Global run_id shared across pipeline stages
+* Global `run_id` shared across pipeline stages
 * Stage-based CLI execution (`--stage`)
 * Full and incremental warehouse modes (`--mode`)
 * Dry-run execution preview (`--dry-run`)
@@ -774,14 +789,23 @@ notebooks/eda_online_retail.ipynb
 * Execution-history tracking in `pipeline_run_control`
 * Environment override through `ONLINE_RETAIL_ENV`
 * Environment-specific runtime isolation for `dev`, `test`, and `prod`
-* Separate processed/quarantine datasets, staging databases, Data Warehouses, BI exports, and reports per environment
-* Shared raw source layer with environment-specific downstream outputs
+* Separate processed and quarantine datasets per environment
+* Separate staging and Data Warehouse databases per environment
+* Separate Power BI outputs and pipeline reports per environment
+* Environment-specific log levels
+* Shared raw source layer with isolated downstream runtime artifacts
 * Runtime-generated environment artifacts excluded from Git
 * DuckDB-based transformations
+* Direct staging-to-Data-Warehouse flow through environment-specific DuckDB databases
+* Redundant `sales_staging.parquet` export removed
 * Star schema data modeling
 * SCD Type 2 product-history management
 * Incremental and idempotent Data Warehouse loading
-* Automated testing with pytest
+* Automated testing with `pytest`
+* Environment configuration and isolation tests
+* Data Quality integration tests using temporary DuckDB databases
+* Validation that critical Data Quality failures are persisted before stopping the pipeline
+* Validation that non-critical Data Quality failures remain observable without stopping the pipeline
 * Automated CSV export for BI tools
 * Logging and execution tracking
 * Reproducible and modular design
@@ -797,12 +821,13 @@ notebooks/eda_online_retail.ipynb
 * The pipeline is designed to be reproducible using relative paths
 * The raw source layer is shared across environments, while processed data, quarantine data, staging databases, Data Warehouses, BI exports, and reports are isolated by environment
 * The staging dataset is stored directly in the environment-specific DuckDB staging database; the redundant `sales_staging.parquet` export was intentionally removed
-* The virtual environment (venv/) is excluded via .gitignore
-* DuckDB used as lightweight analytical database
+* Runtime-generated artifacts for `dev`, `test`, and `prod` are excluded from Git to keep the repository clean
+* The virtual environment (`venv/`) is excluded via `.gitignore`
+* DuckDB is used as a lightweight analytical database
 * The staging layer uses a full-refresh strategy because of the current dataset size, while the Data Warehouse uses incremental and idempotent loading to prevent duplicate dimension members and sales transactions
-* SCD Type 2 used to preserve changes in product descriptions
-* Product referential integrity validated logically to support DuckDB SCD2 updates
-* CSV export layer implemented for easy BI integration
+* SCD Type 2 is used to preserve changes in product descriptions
+* Product referential integrity is validated logically to support DuckDB SCD2 updates
+* CSV export layer is implemented for easy BI integration
 * Separation of concerns:
   * Ingestion & Cleaning
   * Transformation (Staging)
@@ -814,8 +839,13 @@ notebooks/eda_online_retail.ipynb
 * Data Quality metrics are persisted before enforcing the quality gate so failed runs retain diagnostic evidence
 * A global `run_id` correlates ingestion quality metrics with warehouse execution metadata
 * Incremental state is stored as a successful-run watermark; failed runs never advance the watermark
-* Automated pytest tests protect critical schema, quarantine, transformation, Data Quality, watermark, and incremental-loading behavior
-* Automated reporting layer implemented for KPI generation and pipeline monitoring
+* Environment configuration is centralized in `config.json` while runtime environment selection is controlled through `ONLINE_RETAIL_ENV`
+* Automated tests validate environment selection, required configuration keys, invalid environment handling, and path isolation across `dev`, `test`, and `prod`
+* Data Quality integration tests use temporary DuckDB databases to avoid modifying project runtime data during test execution
+* Integration tests verify that critical Data Quality failures are persisted before the pipeline is stopped
+* Integration tests verify that non-critical Data Quality failures remain observable without unnecessarily stopping pipeline execution
+* Automated `pytest` tests protect critical schema, quarantine, transformation, Data Quality, environment configuration, watermark, and incremental-loading behavior
+* Automated reporting layer is implemented for KPI generation and pipeline monitoring
 
 ## 🎯 Author
 **Lina Marcela Franco Montes**
